@@ -72,6 +72,7 @@ export default function App() {
   // Admin State
   const [adminDate, setAdminDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [adminData, setAdminData] = useState<ScanningData[]>([]);
+  const [extraPages, setExtraPages] = useState<number | string>(0);
   const [isSaving, setIsSaving] = useState(false);
   const [exportMonth, setExportMonth] = useState(format(new Date(), 'yyyy-MM'));
 
@@ -100,7 +101,7 @@ export default function App() {
 
   useEffect(() => {
     if (selectedSiteId) {
-      fetchStats();
+      fetchStats(view === 'admin' ? 'personal' : 'main');
       if (view === 'admin') {
         fetchAdminData();
       }
@@ -163,10 +164,10 @@ export default function App() {
     }
   };
 
-  const fetchStats = async () => {
+  const fetchStats = async (mode: 'main' | 'personal' = 'main') => {
     if (!selectedSiteId) return;
     try {
-      const res = await fetch(`/api/stats/${selectedSiteId}`);
+      const res = await fetch(`/api/stats/${selectedSiteId}?mode=${mode}`);
       const data = await res.json();
       setStats(data);
     } catch (err) {
@@ -179,7 +180,8 @@ export default function App() {
     try {
       const res = await fetch(`/api/scanning-data?siteId=${selectedSiteId}&date=${adminDate}`);
       const data = await res.json();
-      setAdminData(data);
+      setAdminData(data.data);
+      setExtraPages(data.extra_pages);
     } catch (err) {
       console.error(err);
     }
@@ -193,22 +195,27 @@ export default function App() {
   };
 
   const saveAdminData = async () => {
+    if (!selectedSiteId) return;
     setIsSaving(true);
     try {
-      await Promise.all(adminData.map(item => 
-        fetch('/api/scanning-data', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+      const res = await fetch('/api/scanning-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          siteId: selectedSiteId,
+          date: adminDate,
+          entries: adminData.map(item => ({
             employee_id: item.employee_id,
-            date: adminDate,
             files: item.files || 0,
             pages: item.pages || 0
-          })
+          })),
+          extra_pages: parseInt(extraPages.toString()) || 0
         })
-      ));
-      fetchStats();
-      // Show success toast or similar
+      });
+      
+      if (res.ok) {
+        fetchStats(view === 'admin' ? 'personal' : 'main');
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -216,9 +223,9 @@ export default function App() {
     }
   };
 
-  const downloadReport = () => {
+  const downloadReport = (mode: 'personal' | 'main' = 'personal') => {
     if (!selectedSiteId) return;
-    window.location.href = `/api/export/${selectedSiteId}?month=${exportMonth}`;
+    window.location.href = `/api/export/${selectedSiteId}?month=${exportMonth}&mode=${mode}`;
   };
 
   const handleAddSite = async () => {
@@ -636,26 +643,7 @@ export default function App() {
                 />
               </div>
 
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="relative h-[42px]">
-                    <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input 
-                      type="date" 
-                      value={adminDate}
-                      onChange={(e) => setAdminDate(e.target.value)}
-                      className="bg-white border border-black/10 rounded-xl pl-10 pr-4 h-full text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                  </div>
-                  <button 
-                    onClick={saveAdminData}
-                    disabled={isSaving}
-                    className="bg-indigo-600 text-white px-6 h-[42px] rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50"
-                  >
-                    {isSaving ? 'Saving...' : <><Save className="w-4 h-4" /> Save Data</>}
-                  </button>
-                </div>
-
+              <div className="flex flex-col md:flex-row md:items-center justify-end gap-4">
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2 bg-white border border-black/10 rounded-xl px-4 h-[42px]">
                     <span className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap">Report Month:</span>
@@ -667,11 +655,18 @@ export default function App() {
                     />
                   </div>
                   <button 
-                    onClick={downloadReport}
+                    onClick={() => downloadReport('personal')}
                     className="bg-white border border-black/10 text-slate-700 px-6 h-[42px] rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-slate-50 transition-all"
                   >
                     <Download className="w-4 h-4" />
-                    Monthly Excel Report
+                    Personal Sheet Download
+                  </button>
+                  <button 
+                    onClick={() => downloadReport('main')}
+                    className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-6 h-[42px] rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-indigo-100 transition-all"
+                  >
+                    <Download className="w-4 h-4" />
+                    Main Sheet Download
                   </button>
                   <button 
                     onClick={() => setShowManagement(!showManagement)}
@@ -864,10 +859,40 @@ export default function App() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Data Entry Table */}
                 <Card className="lg:col-span-2">
-                  <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
-                    <Users className="w-5 h-5 text-indigo-600" />
-                    Daily Data Entry
-                  </h3>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                    <h3 className="text-lg font-bold flex items-center gap-2">
+                      <Users className="w-5 h-5 text-indigo-600" />
+                      Daily Data Entry (Personal)
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="relative h-[42px]">
+                        <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input 
+                          type="date" 
+                          value={adminDate}
+                          onChange={(e) => setAdminDate(e.target.value)}
+                          className="bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 h-full text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                      </div>
+                      <div className="flex items-center gap-3 bg-indigo-50 px-4 h-[42px] rounded-xl border border-indigo-100">
+                        <span className="text-[10px] font-bold text-indigo-600 uppercase whitespace-nowrap">Extra Pages:</span>
+                        <input 
+                          type="number" 
+                          value={extraPages}
+                          onChange={(e) => setExtraPages(e.target.value)}
+                          placeholder="0"
+                          className="w-16 bg-white border border-indigo-200 rounded-lg px-2 py-1 text-right text-sm font-bold focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                      </div>
+                      <button 
+                        onClick={saveAdminData}
+                        disabled={isSaving}
+                        className="bg-indigo-600 text-white px-6 h-[42px] rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20"
+                      >
+                        {isSaving ? 'Saving...' : <><Save className="w-4 h-4" /> Save Data</>}
+                      </button>
+                    </div>
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>

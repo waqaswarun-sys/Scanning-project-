@@ -34,6 +34,15 @@ db.exec(`
     UNIQUE(employee_id, date)
   );
 
+  CREATE TABLE IF NOT EXISTS daily_extra_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id INTEGER,
+    date TEXT NOT NULL,
+    extra_pages INTEGER DEFAULT 0,
+    FOREIGN KEY (site_id) REFERENCES sites(id),
+    UNIQUE(site_id, date)
+  );
+
   CREATE TABLE IF NOT EXISTS admin_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     username TEXT NOT NULL,
@@ -68,6 +77,50 @@ if (siteCount.count === 0) {
   ["Ali", "Sara", "Ahmed"].forEach(name => insertEmployee.run(name, multanId));
   ["Zain", "Hina"].forEach(name => insertEmployee.run(name, lahoreId));
   ["Omar", "Fatima", "Bilal"].forEach(name => insertEmployee.run(name, karachiId));
+}
+
+// Helper for deterministic random split
+function getDeterministicSplit(totalExtra: number, employeeId: number, allActiveEmployeeIds: number[], dateStr: string) {
+  if (allActiveEmployeeIds.length === 0) return 0;
+  if (allActiveEmployeeIds.length === 1) return allActiveEmployeeIds[0] === employeeId ? totalExtra : 0;
+
+  const count = allActiveEmployeeIds.length;
+  const sortedIds = [...allActiveEmployeeIds].sort((a, b) => a - b);
+  const base = Math.floor(totalExtra / count);
+  
+  let remaining = totalExtra;
+  const results: Record<number, number> = {};
+
+  for (let i = 0; i < count; i++) {
+    const id = sortedIds[i];
+    if (i === count - 1) {
+      results[id] = remaining;
+    } else {
+      // Create a seed based on date and employee ID
+      const seedStr = `${dateStr}-${id}`;
+      let hash = 0;
+      for (let j = 0; j < seedStr.length; j++) {
+        hash = ((hash << 5) - hash) + seedStr.charCodeAt(j);
+        hash |= 0;
+      }
+      const hashAbs = Math.abs(hash);
+      
+      // Random offset between -50 and 50
+      // Limit offset so we don't get negative numbers or exceed remaining
+      const maxPossibleOffset = Math.min(50, base);
+      const minPossibleOffset = -Math.min(50, base);
+      const offset = (hashAbs % (maxPossibleOffset - minPossibleOffset + 1)) + minPossibleOffset;
+      
+      let amount = base + offset;
+      if (amount < 0) amount = 0;
+      if (amount > remaining) amount = remaining;
+      
+      results[id] = amount;
+      remaining -= amount;
+    }
+  }
+
+  return results[employeeId] || 0;
 }
 
 async function startServer() {
@@ -117,67 +170,139 @@ async function startServer() {
       LEFT JOIN scanning_data sd ON e.id = sd.employee_id AND sd.date = ?
       WHERE e.site_id = ? AND (e.is_active = 1 OR sd.employee_id IS NOT NULL)
     `).all(date, siteId);
-    res.json(data);
+    
+    const extra = db.prepare("SELECT extra_pages FROM daily_extra_pages WHERE site_id = ? AND date = ?").get(siteId, date) as any;
+    
+    res.json({ data, extra_pages: extra?.extra_pages || 0 });
   });
 
   app.post("/api/scanning-data", (req, res) => {
-    const { employee_id, date, files, pages } = req.body;
-    const upsert = db.prepare(`
-      INSERT INTO scanning_data (employee_id, date, files, pages)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(employee_id, date) DO UPDATE SET
-        files = excluded.files,
-        pages = excluded.pages
-    `);
-    upsert.run(employee_id, date, files, pages);
+    const { siteId, date, entries, extra_pages } = req.body;
+    
+    const dbTransaction = db.transaction(() => {
+      // Update individual entries
+      const upsertData = db.prepare(`
+        INSERT INTO scanning_data (employee_id, date, files, pages)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(employee_id, date) DO UPDATE SET
+          files = excluded.files,
+          pages = excluded.pages
+      `);
+      
+      for (const entry of entries) {
+        upsertData.run(entry.employee_id, date, entry.files || 0, entry.pages || 0);
+      }
+      
+      // Update extra pages
+      const upsertExtra = db.prepare(`
+        INSERT INTO daily_extra_pages (site_id, date, extra_pages)
+        VALUES (?, ?, ?)
+        ON CONFLICT(site_id, date) DO UPDATE SET
+          extra_pages = excluded.extra_pages
+      `);
+      upsertExtra.run(siteId, date, extra_pages || 0);
+    });
+    
+    dbTransaction();
     res.json({ success: true });
   });
 
   app.get("/api/stats/:siteId", (req, res) => {
     const siteId = req.params.siteId;
+    const mode = req.query.mode || 'main'; // 'main' or 'personal'
     
     const overall = db.prepare(`
       SELECT 
         SUM(sd.files) as total_files, 
-        SUM(sd.pages) as total_pages,
+        SUM(sd.pages) + (SELECT IFNULL(SUM(extra_pages), 0) FROM daily_extra_pages WHERE site_id = ?) as total_pages,
         s.target_files
       FROM sites s
       LEFT JOIN employees e ON s.id = e.site_id
       LEFT JOIN scanning_data sd ON e.id = sd.employee_id
       WHERE s.id = ?
-    `).get(siteId) as any;
+    `).get(siteId, siteId) as any;
 
     const monthly = db.prepare(`
       SELECT 
-        strftime('%Y-%m', date) as month,
-        SUM(files) as files,
-        SUM(pages) as pages
+        strftime('%Y-%m', sd.date) as month,
+        SUM(sd.files) as files,
+        SUM(sd.pages) + (
+          SELECT IFNULL(SUM(dep.extra_pages), 0) 
+          FROM daily_extra_pages dep 
+          WHERE dep.site_id = ? AND strftime('%Y-%m', dep.date) = strftime('%Y-%m', sd.date)
+        ) as pages
       FROM scanning_data sd
       JOIN employees e ON sd.employee_id = e.id
       WHERE e.site_id = ?
       GROUP BY month
       ORDER BY month DESC
-    `).all(siteId);
+    `).all(siteId, siteId);
 
     const weekly = db.prepare(`
       SELECT 
-        date,
-        SUM(files) as files,
-        SUM(pages) as pages
+        sd.date,
+        SUM(sd.files) as files,
+        SUM(sd.pages) + (
+          SELECT IFNULL(dep.extra_pages, 0) 
+          FROM daily_extra_pages dep 
+          WHERE dep.site_id = ? AND dep.date = sd.date
+        ) as pages
       FROM scanning_data sd
       JOIN employees e ON sd.employee_id = e.id
       WHERE e.site_id = ?
-      GROUP BY date
-      ORDER BY date DESC
+      GROUP BY sd.date
+      ORDER BY sd.date DESC
       LIMIT 30
-    `).all(siteId);
+    `).all(siteId, siteId);
 
-    res.json({ overall, monthly, weekly });
+    // If personal mode, we need to subtract the extra pages or just query without them
+    if (mode === 'personal') {
+      const personalOverall = db.prepare(`
+        SELECT 
+          SUM(sd.files) as total_files, 
+          SUM(sd.pages) as total_pages,
+          s.target_files
+        FROM sites s
+        LEFT JOIN employees e ON s.id = e.site_id
+        LEFT JOIN scanning_data sd ON e.id = sd.employee_id
+        WHERE s.id = ?
+      `).get(siteId) as any;
+
+      const personalMonthly = db.prepare(`
+        SELECT 
+          strftime('%Y-%m', date) as month,
+          SUM(files) as files,
+          SUM(pages) as pages
+        FROM scanning_data sd
+        JOIN employees e ON sd.employee_id = e.id
+        WHERE e.site_id = ?
+        GROUP BY month
+        ORDER BY month DESC
+      `).all(siteId);
+
+      const personalWeekly = db.prepare(`
+        SELECT 
+          date,
+          SUM(files) as files,
+          SUM(pages) as pages
+        FROM scanning_data sd
+        JOIN employees e ON sd.employee_id = e.id
+        WHERE e.site_id = ?
+        GROUP BY date
+        ORDER BY date DESC
+        LIMIT 30
+      `).all(siteId);
+
+      res.json({ overall: personalOverall, monthly: personalMonthly, weekly: personalWeekly });
+    } else {
+      res.json({ overall, monthly, weekly });
+    }
   });
 
   app.get("/api/export/:siteId", (req, res) => {
     const siteId = req.params.siteId;
     const monthStr = req.query.month as string || format(new Date(), 'yyyy-MM');
+    const mode = (req.query.mode as string) || 'personal'; // 'personal' or 'main'
     
     const site = db.prepare("SELECT * FROM sites WHERE id = ?").get(siteId) as any;
     if (!site) return res.status(404).json({ error: "Site not found" });
@@ -194,6 +319,11 @@ async function startServer() {
       WHERE e.site_id = ? AND sd.date LIKE ?
     `).all(siteId, `${monthStr}%`) as any[];
 
+    const extraPagesData = db.prepare(`
+      SELECT * FROM daily_extra_pages 
+      WHERE site_id = ? AND date LIKE ?
+    `).all(siteId, `${monthStr}%`) as any[];
+
     // Build the grid
     const aoa: any[][] = [];
 
@@ -201,9 +331,24 @@ async function startServer() {
     aoa.push(["NAME", "FILES", "PAGES"]);
     let grandTotalFiles = 0;
     let grandTotalPages = 0;
+    
     employees.forEach(e => {
       const eFiles = scanningData.filter(d => d.employee_id === e.id).reduce((sum, d) => sum + d.files, 0);
-      const ePages = scanningData.filter(d => d.employee_id === e.id).reduce((sum, d) => sum + d.pages, 0);
+      let ePages = scanningData.filter(d => d.employee_id === e.id).reduce((sum, d) => sum + d.pages, 0);
+      
+      if (mode === 'main') {
+        // Calculate extra pages for this employee
+        extraPagesData.forEach(ep => {
+          const activeOnThisDay = scanningData.filter(d => d.date === ep.date);
+          const activeIds = activeOnThisDay.map(d => d.employee_id);
+          const isWorkingThisDay = activeIds.includes(e.id);
+          
+          if (isWorkingThisDay) {
+            ePages += getDeterministicSplit(ep.extra_pages, e.id, activeIds, ep.date);
+          }
+        });
+      }
+
       aoa.push([e.name, eFiles, ePages]);
       grandTotalFiles += eFiles;
       grandTotalPages += ePages;
@@ -214,7 +359,7 @@ async function startServer() {
     
     // Row 1: Title
     const titleRow: any[] = Array(3 + employees.length * 2).fill("");
-    titleRow[1] = `${format(startDate, 'MMMM').toUpperCase()} SCANNING`;
+    titleRow[1] = `${format(startDate, 'MMMM').toUpperCase()} SCANNING (${mode.toUpperCase()})`;
     aoa.push(titleRow);
 
     // Row 2: Operator Names
@@ -235,7 +380,16 @@ async function startServer() {
     // Row 4: Total Pages per operator
     const totalPagesRow: any[] = ["", "", ""];
     employees.forEach(e => {
-      const total = scanningData.filter(d => d.employee_id === e.id).reduce((sum, d) => sum + d.pages, 0);
+      let total = scanningData.filter(d => d.employee_id === e.id).reduce((sum, d) => sum + d.pages, 0);
+      if (mode === 'main') {
+        extraPagesData.forEach(ep => {
+          const activeOnThisDay = scanningData.filter(d => d.date === ep.date).length;
+          const isWorkingThisDay = scanningData.some(d => d.date === ep.date && d.employee_id === e.id);
+          if (isWorkingThisDay && activeOnThisDay > 0) {
+            total += Math.floor(ep.extra_pages / activeOnThisDay);
+          }
+        });
+      }
       totalPagesRow.push("TOTAL PAGES", total);
     });
     aoa.push(totalPagesRow);
@@ -253,8 +407,11 @@ async function startServer() {
       const row = [format(day, 'M/d/yy')];
       
       const dayData = scanningData.filter(d => d.date === dateStr);
+      const extraForDay = extraPagesData.find(ep => ep.date === dateStr)?.extra_pages || 0;
+      
       const totalFiles = dayData.reduce((sum, d) => sum + d.files, 0);
-      const totalPages = dayData.reduce((sum, d) => sum + d.pages, 0);
+      let totalPages = dayData.reduce((sum, d) => sum + d.pages, 0);
+      if (mode === 'main') totalPages += extraForDay;
       
       row.push(totalFiles || 0, totalPages || 0);
 
@@ -265,7 +422,12 @@ async function startServer() {
       } else {
         employees.forEach(e => {
           const empData = dayData.find(d => d.employee_id === e.id);
-          row.push(empData?.files || 0, empData?.pages || 0);
+          let p = empData?.pages || 0;
+          if (mode === 'main' && empData && dayData.length > 0) {
+            const activeIds = dayData.map(d => d.employee_id);
+            p += getDeterministicSplit(extraForDay, e.id, activeIds, dateStr);
+          }
+          row.push(empData?.files || 0, p);
         });
       }
       aoa.push(row);
@@ -288,7 +450,8 @@ async function startServer() {
     XLSX.utils.book_append_sheet(wb, ws, "Scanning Data");
     
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-    res.setHeader("Content-Disposition", `attachment; filename=${monthStr}_scanning_report.xlsx`);
+    const filename = `${monthStr}, ${site.name}, ${mode}.xlsx`;
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.send(buf);
   });
