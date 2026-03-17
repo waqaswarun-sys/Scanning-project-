@@ -1599,7 +1599,7 @@ export default function App() {
                         </div>
                       </div>
                     ))}
-                    {adminData.filter(op => op.is_active).length === 0).length === 0 && (
+                    {adminData.filter(op => op.is_active).length === 0 && (
                       <div className="col-span-full text-center py-4 text-slate-400 text-sm">
                         No operators found for this site.
                       </div>
