@@ -17,6 +17,7 @@ import {
   Check,
   LogOut,
   UserCog,
+  User,
   Menu,
   X,
   ChevronDown

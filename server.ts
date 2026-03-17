@@ -19,7 +19,7 @@ import fs from "fs";
 import * as XLSX from "xlsx";
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSunday } from "date-fns";
 import bcrypt from "bcryptjs";
-import { Site, Employee, ScanningData, Stats } from './src/types';
+import { Site, Employee, ScanningData, Stats } from './src/types.ts';
 
 const db = new Database("scanning.db");
 db.prepare("PRAGMA journal_mode=WAL").run();
