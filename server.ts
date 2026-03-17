@@ -19,7 +19,7 @@ import fs from "fs";
 import * as XLSX from "xlsx";
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSunday } from "date-fns";
 import bcrypt from "bcryptjs";
-import { Site, Employee, ScanningData, Stats } from './src/types.ts';
+import { Site, Employee, ScanningData, Stats } from './src/types';
 
 const db = new Database("scanning.db");
 db.prepare("PRAGMA journal_mode=WAL").run();
@@ -192,20 +192,32 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
-  app.set('trust proxy', true);
+  app.set('trust proxy', 1); // trust first proxy
   app.use(session({
-    secret: process.env.SESSION_SECRET || 'scanning-secret-key',
-    resave: true,
+    secret: process.env.SESSION_SECRET || 'scanning-track-v1',
+    resave: false,
     saveUninitialized: false,
-    rolling: true,
+    rolling: false,
     name: 'scantrack.sid',
+    proxy: true,
     cookie: { 
       secure: true, 
       sameSite: 'none',
       httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     }
   }));
+
+  // Debug middleware to log session state
+  app.use((req: any, res: any, next: any) => {
+    if (req.url.startsWith('/api/')) {
+      const hasSession = !!(req.session && req.session.user);
+      const hasToken = !!(req.headers['x-auth-token']);
+      const hasCookie = !!(req.headers.cookie && req.headers.cookie.includes('scantrack.sid'));
+      console.log(`[DEBUG] ${req.method} ${req.url} - Session: ${hasSession}, Token: ${hasToken}, Cookie: ${hasCookie}`);
+    }
+    next();
+  });
 
   // Auth Middleware
   const requireAuth = (req: any, res: any, next: any) => {
@@ -294,16 +306,17 @@ async function startServer() {
         console.log(`[AUTH] Generating token for ${username}`);
         db.prepare("INSERT INTO user_tokens (token, user_id) VALUES (?, ?)").run(token, user.id);
 
-        // Regenerate session to prevent fixation and ensure fresh state
-        req.session.regenerate((err: any) => {
-          if (err) console.error('[AUTH] Session regeneration error:', err);
-          
-          req.session.user = userData;
-          req.session.save((err: any) => {
-            if (err) console.error('[AUTH] Session save error:', err);
-            console.log(`[AUTH] Login successful for ${username}. New SessionID: ${req.sessionID}`);
-            res.json({ success: true, user: userData, token });
-          });
+        // Set session user directly
+        req.session.user = userData;
+        
+        // Save session explicitly before responding
+        req.session.save((err: any) => {
+          if (err) {
+            console.error('[AUTH] Session save error:', err);
+            return res.status(500).json({ error: "Failed to save session" });
+          }
+          console.log(`[AUTH] Login successful for ${username}. SessionID: ${req.sessionID}`);
+          res.json({ success: true, user: userData, token });
         });
       } else {
         console.log(`[AUTH] Login failed for ${username}`);
@@ -318,6 +331,7 @@ async function startServer() {
   app.get("/api/me", (req: any, res: any) => {
     try {
       const token = req.headers['x-auth-token'] || req.query.token;
+      console.log(`[AUTH] /api/me check. Token present: ${!!token}, Session present: ${!!(req.session && req.session.user)}`);
       
       if (token && typeof token === 'string' && token.length > 0) {
         const tokenData = db.prepare(`
@@ -336,6 +350,12 @@ async function startServer() {
             site_access: typeof tokenData.site_access === 'string' ? JSON.parse(tokenData.site_access || '[]') : (tokenData.site_access || [])
           };
           console.log(`[AUTH] /api/me found user via token: ${userData.username}`);
+          
+          // Sync session if it's missing but token is valid
+          if (req.session && !req.session.user) {
+            req.session.user = userData;
+          }
+          
           return res.json(userData);
         } else {
           console.log(`[AUTH] /api/me token lookup failed for token starting with: ${token.substring(0, 5)}`);

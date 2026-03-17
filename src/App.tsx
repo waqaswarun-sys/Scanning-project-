@@ -150,23 +150,23 @@ export default function App() {
 
   const checkAuth = useCallback(async (retryCount = 0) => {
     const token = localStorage.getItem('authToken');
-    console.log(`[AUTH] Starting checkAuth (attempt ${retryCount + 1})... Token: ${!!token}`);
+    console.log(`[AUTH] Starting checkAuth (attempt ${retryCount + 1})... Token: ${token ? token.substring(0, 5) + '...' : 'none'}`);
     
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Auth check timeout')), 10000)
+      setTimeout(() => reject(new Error('Auth check timeout')), 15000)
     );
 
     let shouldRetry = false;
 
     try {
-      const fetchPromise = apiFetch(`/api/me?t=${Date.now()}`);
-      const res = await Promise.race([fetchPromise, timeoutPromise]) as Response;
+      // Use a cache-buster to ensure we get fresh data from the server
+      const res = await apiFetch(`/api/me?t=${Date.now()}&retry=${retryCount}`);
       
-      console.log('[AUTH] /api/me response status:', res.status);
+      console.log(`[AUTH] /api/me response status: ${res.status} (attempt ${retryCount + 1})`);
       
       if (res.ok) {
         const user = await res.json();
-        console.log('[AUTH] /api/me user data:', user ? `User found: ${user.username}` : 'No user');
+        console.log('[AUTH] /api/me success:', user?.username);
         if (user) {
           setIsAuthenticated(true);
           setCurrentUser(user);
@@ -180,32 +180,28 @@ export default function App() {
             return currentView;
           });
         } else {
-          if (token && retryCount < 1) {
-            console.log('[AUTH] No user found but token exists, will retry');
+          console.log('[AUTH] No user in response body');
+          if (token && retryCount < 2) shouldRetry = true;
+        }
+      } else {
+        console.log(`[AUTH] /api/me failed with status ${res.status}`);
+        if (res.status === 401) {
+          if (token && retryCount < 2) {
+            console.log('[AUTH] 401 but token exists, retrying...');
             shouldRetry = true;
           } else {
-            console.log('[AUTH] No user in response, clearing auth');
+            console.log('[AUTH] 401 and no token or retries exhausted, clearing auth');
+            localStorage.removeItem('authToken');
             setIsAuthenticated(false);
             setCurrentUser(null);
           }
-        }
-      } else {
-        if (res.status === 401 && token && retryCount < 1) {
-          console.log('[AUTH] 401 Unauthorized with token, will retry');
+        } else if (retryCount < 2) {
           shouldRetry = true;
-        } else {
-          console.log('[AUTH] /api/me response not OK:', res.status);
-          if (res.status === 401) {
-            localStorage.removeItem('authToken');
-          }
-          setIsAuthenticated(false);
-          setCurrentUser(null);
         }
       }
     } catch (err) {
-      console.error('[AUTH] Check failed or timed out:', err);
-      if (retryCount < 1 && token) {
-        console.log('[AUTH] Error during check, will retry');
+      console.error('[AUTH] Check failed:', err);
+      if (retryCount < 2) {
         shouldRetry = true;
       } else {
         setIsAuthenticated(false);
@@ -214,14 +210,17 @@ export default function App() {
     }
 
     if (shouldRetry) {
-      setTimeout(() => checkAuth(retryCount + 1), 800);
+      const delay = 1000 * (retryCount + 1);
+      console.log(`[AUTH] Retrying checkAuth in ${delay}ms...`);
+      setTimeout(() => checkAuth(retryCount + 1), delay);
     } else {
       setAuthChecked(true);
-      console.log('[AUTH] checkAuth finished, authChecked set to true');
     }
   }, [apiFetch]);
 
   useEffect(() => {
+    console.log(`[APP] Mount. URL: ${window.location.href}`);
+    console.log(`[APP] localStorage authToken: ${localStorage.getItem('authToken') ? 'present' : 'missing'}`);
     checkAuth();
   }, [checkAuth]);
 
