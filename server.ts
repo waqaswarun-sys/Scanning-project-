@@ -26,16 +26,19 @@ import { Site, Employee, ScanningData, Stats } from './src/types.ts';
 // Initialize Firebase Admin
 import firebaseConfig from './firebase-applet-config.json';
 
-import { initializeApp, getApps, applicationDefault } from "firebase-admin/app";
+import { initializeApp, getApps, cert } from "firebase-admin/app";
+
+import { cert } from "firebase-admin/app";
 
 if (!getApps().length) {
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
   initializeApp({
-    credential: applicationDefault(),
+    credential: cert(serviceAccount),
     projectId: firebaseConfig.projectId,
   });
 }
 
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 const db = getFirestore();
 // Use the specific database ID if provided
 if (firebaseConfig.firestoreDatabaseId) {
