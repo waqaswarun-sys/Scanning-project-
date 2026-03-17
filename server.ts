@@ -2,6 +2,8 @@ import express from "express";
 import session from "express-session";
 import { createServer as createViteServer } from "vite";
 import * as admin from "firebase-admin";
+import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 declare module 'express-session' {
   interface SessionData {
@@ -26,19 +28,18 @@ import { Site, Employee, ScanningData, Stats } from './src/types.ts';
 // Initialize Firebase Admin
 import firebaseConfig from './firebase-applet-config.json';
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.applicationDefault(), // Or use service account if needed, but applicationDefault works in AI Studio
+if (!getApps().length) {
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+  if (serviceAccount.private_key) {
+    serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+  }
+  initializeApp({
+    credential: cert(serviceAccount),
     projectId: firebaseConfig.projectId,
   });
 }
 
-const db = admin.firestore();
-// Use the specific database ID if provided
-if (firebaseConfig.firestoreDatabaseId) {
-  // For named databases in Firebase Admin, we can use the databaseId in settings or just assume default for now
-  // In AI Studio, the default database is usually what we want.
-}
+const db = getFirestore();
 
 
 // Seed default admin if not exists
