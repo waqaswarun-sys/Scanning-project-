@@ -35,7 +35,8 @@ if (!getApps().length) {
   });
 }
 
-const db = admin.firestore();
+import { getFirestore } from "firebase-admin/firestore";
+const db = getFirestore();
 // Use the specific database ID if provided
 if (firebaseConfig.firestoreDatabaseId) {
   // For named databases in Firebase Admin, we can use the databaseId in settings or just assume default for now
