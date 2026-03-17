@@ -1,0 +1,81 @@
+{
+  "entities": {
+    "Site": {
+      "title": "Site",
+      "description": "A scanning site location",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "target_files": { "type": "integer" }
+      },
+      "required": ["name"]
+    },
+    "Employee": {
+      "title": "Employee",
+      "description": "A scanning operator",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "site_id": { "type": "string" },
+        "is_active": { "type": "boolean" },
+        "rate_per_page": { "type": "number" }
+      },
+      "required": ["name", "site_id"]
+    },
+    "ScanningData": {
+      "title": "Scanning Data",
+      "description": "Daily scanning records for an employee",
+      "type": "object",
+      "properties": {
+        "employee_id": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "files": { "type": "integer" },
+        "pages": { "type": "integer" }
+      },
+      "required": ["employee_id", "date"]
+    },
+    "DailyExtraPages": {
+      "title": "Daily Extra Pages",
+      "description": "Extra pages recorded at a site on a specific date",
+      "type": "object",
+      "properties": {
+        "site_id": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "extra_pages": { "type": "integer" }
+      },
+      "required": ["site_id", "date"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Application user for authentication",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "permissions": { "type": "array", "items": { "type": "string" } },
+        "site_access": { "type": "array", "items": { "type": "string" } },
+        "employee_id": { "type": "string" }
+      },
+      "required": ["username", "password", "role"]
+    },
+    "UserToken": {
+      "title": "User Token",
+      "description": "Authentication token",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id"]
+    }
+  },
+  "firestore": {
+    "/sites": { "schema": "Site", "description": "Collection of sites" },
+    "/employees": { "schema": "Employee", "description": "Collection of employees" },
+    "/scanning_data": { "schema": "ScanningData", "description": "Collection of scanning records" },
+    "/daily_extra_pages": { "schema": "DailyExtraPages", "description": "Collection of extra pages" },
+    "/users": { "schema": "User", "description": "Collection of users" },
+    "/user_tokens": { "schema": "UserToken", "description": "Collection of auth tokens" }
+  }
+}

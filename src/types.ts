@@ -1,17 +1,17 @@
 export interface Site {
-  id: number;
+  id: string | number;
   name: string;
   target_files: number;
 }
 
 export interface Employee {
-  id: number;
+  id: string | number;
   name: string;
-  site_id: number;
+  site_id: string | number;
 }
 
 export interface ScanningData {
-  employee_id: number;
+  employee_id: string | number;
   name: string;
   is_active: number;
   files: number | null;

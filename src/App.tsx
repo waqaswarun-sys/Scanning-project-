@@ -82,7 +82,7 @@ export default function App() {
   const [sites, setSites] = useState<Site[]>([]);
   const [sitesSummary, setSitesSummary] = useState<any[]>([]);
   const [operatorsSummary, setOperatorsSummary] = useState<any[]>([]);
-  const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
+  const [selectedSiteId, setSelectedSiteId] = useState<string | number | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -103,8 +103,8 @@ export default function App() {
   const [newSiteTarget, setNewSiteTarget] = useState('');
   const [newEmployeeName, setNewEmployeeName] = useState('');
   const [updateTargetValue, setUpdateTargetValue] = useState('');
-  const [confirmDeleteSite, setConfirmDeleteSite] = useState<number | null>(null);
-  const [confirmDeleteEmployeeId, setConfirmDeleteEmployeeId] = useState<number | null>(null);
+  const [confirmDeleteSite, setConfirmDeleteSite] = useState<string | number | null>(null);
+  const [confirmDeleteEmployeeId, setConfirmDeleteEmployeeId] = useState<string | number | null>(null);
   const [copiedDate, setCopiedDate] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -113,11 +113,11 @@ export default function App() {
 
   // Operator Summary State
   const [allOperators, setAllOperators] = useState<any[]>([]);
-  const [selectedOperatorId, setSelectedOperatorId] = useState<number | null>(null);
+  const [selectedOperatorId, setSelectedOperatorId] = useState<string | number | null>(null);
   const [operatorSummary, setOperatorSummary] = useState<any[]>([]);
   const [operatorDaily, setOperatorDaily] = useState<any[]>([]);
   const [summaryMonth, setSummaryMonth] = useState(format(new Date(), 'yyyy-MM'));
-  const [isUpdatingRate, setIsUpdatingRate] = useState<number | null>(null);
+  const [isUpdatingRate, setIsUpdatingRate] = useState<string | number | null>(null);
   const [newRateValue, setNewRateValue] = useState('');
 
   const apiFetch = useCallback(async (url: string, options: RequestInit = {}) => {
@@ -338,7 +338,7 @@ export default function App() {
     }
   };
 
-  const updateOperatorRate = async (id: number, rate: number) => {
+  const updateOperatorRate = async (id: string | number, rate: number) => {
     try {
       const res = await apiFetch(`/api/employees/${id}/rate`, {
         method: 'PATCH',
@@ -438,7 +438,7 @@ export default function App() {
     }
   };
 
-  const handleAdminChange = (employeeId: number, field: 'files' | 'pages', value: string) => {
+  const handleAdminChange = (employeeId: string | number, field: 'files' | 'pages', value: string) => {
     const numValue = value === '' ? null : parseInt(value);
     setAdminData(prev => prev.map(item => 
       item.employee_id === employeeId ? { ...item, [field]: numValue } : item
@@ -531,7 +531,7 @@ export default function App() {
     }
   };
 
-  const handleDeleteEmployee = async (id: number) => {
+  const handleDeleteEmployee = async (id: string | number) => {
     if (id === undefined || id === null) {
       console.error('Invalid ID provided for deletion');
       return;
@@ -553,7 +553,7 @@ export default function App() {
     }
   };
 
-  const handleDeleteSite = async (id: number) => {
+  const handleDeleteSite = async (id: string | number) => {
     try {
       const res = await apiFetch(`/api/sites/${id}`, { method: 'DELETE' });
       if (!res.ok) {
