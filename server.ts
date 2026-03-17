@@ -26,20 +26,14 @@ import { Site, Employee, ScanningData, Stats } from './src/types.ts';
 // Initialize Firebase Admin
 import firebaseConfig from './firebase-applet-config.json';
 
-import { initializeApp, getApps, cert } from "firebase-admin/app";
-
-import { cert } from "firebase-admin/app";
-
-if (!getApps().length) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
-  initializeApp({
-    credential: cert(serviceAccount),
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.applicationDefault(), // Or use service account if needed, but applicationDefault works in AI Studio
     projectId: firebaseConfig.projectId,
   });
 }
 
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
-const db = getFirestore();
+const db = admin.firestore();
 // Use the specific database ID if provided
 if (firebaseConfig.firestoreDatabaseId) {
   // For named databases in Firebase Admin, we can use the databaseId in settings or just assume default for now

@@ -1177,10 +1177,10 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-black/5">
                       {adminData.map((item) => (
-                        <tr key={item.employee_id} className={cn("group hover:bg-slate-50 transition-colors", item.is_active === 0 && "opacity-60 bg-slate-50/30")}>
+                        <tr key={item.employee_id} className={cn("group hover:bg-slate-50 transition-colors", !item.is_active && "opacity-60 bg-slate-50/30")}>
                           <td className="py-4 font-medium text-slate-700">
                             {item.name}
-                            {item.is_active === 0 && (
+                            {!item.is_active && (
                               <span className="ml-2 text-[10px] font-bold text-slate-400 uppercase bg-slate-100 px-1.5 py-0.5 rounded">Inactive</span>
                             )}
                           </td>
@@ -1518,7 +1518,7 @@ export default function App() {
                     <Users className="w-4 h-4 text-indigo-600" /> Manage Operators
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                    {adminData.filter(op => op.is_active === 1).map(operator => (
+                    {adminData.filter(op => op.is_active).map(operator => (
                       <div key={operator.employee_id} className="flex flex-col p-3 border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors gap-2">
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-medium text-slate-700">{operator.name}</span>
@@ -1599,7 +1599,7 @@ export default function App() {
                         </div>
                       </div>
                     ))}
-                    {adminData.filter(op => op.is_active === 1).length === 0 && (
+                    {adminData.filter(op => op.is_active).length === 0).length === 0 && (
                       <div className="col-span-full text-center py-4 text-slate-400 text-sm">
                         No operators found for this site.
                       </div>
