@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "scantrack-pro-a31e9",
+  "private_key_id": "1cf5e89f7e3738941d27212996025cd81b38092f",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCrf3QEjIb0lpRF\n0a2X4h1laRNEG6gWbMgGpC8UV8fS0H9YF1X/ALPZWbx1TP7jAoUPZj9eP+5/WXSJ\nF5ort/5TaC4utdjloheHWcZ0hAy/4ScgX8UCUOBrLiP+DWbo3/L7qvE6+c/78jMz\n9vXcRCNhXe4IfXRfwUEYBBfC5u/hlgh/E663LPk1ZgPXWI3fWXno2r2XJ2YLv8aU\neCPR/fj/qsa3TeMBR1fya458wxtlGMTX48Lw5LoaIWRxWINgWZkPvYmoU/BA+0rX\nT16rm0iAQl3wIvoRLSZMhUI8KzxzqUMStBezUUc55gnpkLUm6LT9T3V+5htVtXeH\nDqMvvZR/AgMBAAECggEAM/A9qsMEfD6+WQbPlBge3v+bnhziIyh+y8QdngOXuPj8\nGCm5GamUzlanBL900juJIMjOmDS0fk0RRhOn1WW72HbMxci9D46voYZG3DLBybre\npqdaewETdmJa9C4K5KwuYpm6xSmzG5KWfz5j53mbXXmdBWU5QWa92BAlQhm+vIq8\nkSWUwDDLT3XkrVfoBFIaH/dO9Qn4dtt4T5ED6pu3sr14169oOa+Ujczuejc/hbax\n1vHTXOsOfZfJr7aQgrwC6k6SPHXCNAFDbcVSim7XRkRXkCkwoZrOJjXNq3f5EQgq\n8YESP7XyfGGP1EhO/87ewSpEMYVJam+dqpoHDFQ1gQKBgQDes0I9FduUsWwaNv2f\nMRfRifp66ppar67wusw+kkZ7PxyS8D11wfCoIeAVP79/M43zIfcla6LHnmqU6VWe\nKI+MGpOsXGMxoDt41YMDAEdNMuQHQ85aUu7zsM04xKLUB9obczqYxhGWZbOfQtgC\n1xMAwSVWcLiiG7GWnZ1wK3RkSQKBgQDFJDgjptGAlA6z019M1VYBSelAWRAe2cvr\nRf9uBj91T5rzbWTVI8p7bktXTT5MrX1OzOMXtPL3olPDXKuzrDnUVMvOFudfQ1Ko\npIKTzfrpYq5VlU+OyO4G2FcY0zDZZRYYH65HGBFVK9nu9hF+7LPGZR2RINW6piOO\nBsAdKbMihwKBgQCvbtFQY6adxQKeyBEVVcwooiQyrhs4M0uBkfWRmRNyxW3SBvSz\njjrxh/YJZzWIk+lPzcLutJL/47icZA+xTsx+FvWcAw+VKV+QOcpCE/cXRm7BllW5\na7mXOQEBpk2K8ECN/UD81pNGQgm0/ShDXIA4yO6L4LJh6aUFPFao5WKEGQKBgGuo\n4femTFcZhAX0cuD0yGkfwf/gI4uViWVM7rdZNiKMfKRfo2c6ioNpsj9U8abSP9Je\n1c3GhcFypqfT3fjbHyGzxTEhFO3TSDrMzHqHTHVT7LzUM4RYepTGZJosC0tNhwlZ\nk8VDgYOv1O5I9zkHbw3zfngZJF8wB86yJQxID4nVAoGAeEjYUvftDOfMpyEcL5JM\nQLGZ//REytuxQudKupnZxC+rue4KXRQcUO9VQg80up2HgyqNR4/MOZ6Kj2b2wuD2\npd8k7aAsSNOp7UCmrwy7LrMi4OjQTVk8A+C2ce43XHqxhotXinJMEQYVByhYWlm2\n/b2HP07OFZ9BOI+SNXkykeM=\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-fbsvc@scantrack-pro-a31e9.iam.gserviceaccount.com",
+  "client_id": "100824260155253644536",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40scantrack-pro-a31e9.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
