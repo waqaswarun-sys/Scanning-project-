@@ -249,7 +249,7 @@ async function startServer() {
         console.log(`[AUTH] Generating token for ${username}`);
         await db.collection('user_tokens').doc(token).set({
           user_id: userDoc.id,
-          created_at: admin.firestore.FieldValue.serverTimestamp()
+          created_at: FieldValue.serverTimestamp()
         });
 
         // Set session user directly
@@ -454,7 +454,7 @@ async function startServer() {
         permissions: permissions || [],
         site_access: site_access || [],
         employee_id: employee_id || null,
-        created_at: admin.firestore.FieldValue.serverTimestamp()
+        created_at: FieldValue.serverTimestamp()
       });
       res.json({ success: true });
     } catch (e) {
@@ -485,7 +485,7 @@ async function startServer() {
         permissions: permissions || [],
         site_access: site_access || [],
         employee_id: employee_id || null,
-        updated_at: admin.firestore.FieldValue.serverTimestamp()
+        updated_at: FieldValue.serverTimestamp()
       };
 
       if (password && typeof password === 'string' && password.length >= 6) {
@@ -749,7 +749,7 @@ async function startServer() {
             date,
             files: Number(files),
             pages: Number(pages),
-            updated_at: admin.firestore.FieldValue.serverTimestamp()
+            updated_at: FieldValue.serverTimestamp()
           }, { merge: true });
         }
       }
@@ -761,7 +761,7 @@ async function startServer() {
         site_id: siteId,
         date,
         extra_pages: Number(extra_pages || 0),
-        updated_at: admin.firestore.FieldValue.serverTimestamp()
+        updated_at: FieldValue.serverTimestamp()
       }, { merge: true });
 
       await batch.commit();
@@ -1069,7 +1069,7 @@ async function startServer() {
     try {
       await db.collection('sites').doc(req.params.id).update({
         target_files: Number(target_files),
-        updated_at: admin.firestore.FieldValue.serverTimestamp()
+        updated_at: FieldValue.serverTimestamp()
       });
       res.json({ success: true });
     } catch (err) {
@@ -1090,7 +1090,7 @@ async function startServer() {
       const docRef = await db.collection('sites').add({
         name,
         target_files: target_files || 0,
-        created_at: admin.firestore.FieldValue.serverTimestamp()
+        created_at: FieldValue.serverTimestamp()
       });
       res.json({ id: docRef.id, name, target_files });
     } catch (err) {
@@ -1118,7 +1118,7 @@ async function startServer() {
         name,
         site_id: String(site_id),
         is_active: true,
-        created_at: admin.firestore.FieldValue.serverTimestamp()
+        created_at: FieldValue.serverTimestamp()
       });
       res.json({ id: docRef.id, name, site_id });
     } catch (err) {
@@ -1145,7 +1145,7 @@ async function startServer() {
 
       await employeeRef.update({
         is_active: false,
-        updated_at: admin.firestore.FieldValue.serverTimestamp()
+        updated_at: FieldValue.serverTimestamp()
       });
       res.json({ success: true });
     } catch (error) {
@@ -1303,7 +1303,7 @@ async function startServer() {
 
       await employeeRef.update({
         rate_per_page: Number(rate),
-        updated_at: admin.firestore.FieldValue.serverTimestamp()
+        updated_at: FieldValue.serverTimestamp()
       });
       res.json({ success: true });
     } catch (err) {
