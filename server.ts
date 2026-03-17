@@ -26,9 +26,11 @@ import { Site, Employee, ScanningData, Stats } from './src/types.ts';
 // Initialize Firebase Admin
 import firebaseConfig from './firebase-applet-config.json';
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.applicationDefault(), // Or use service account if needed, but applicationDefault works in AI Studio
+import { initializeApp, getApps, applicationDefault } from "firebase-admin/app";
+
+if (!getApps().length) {
+  initializeApp({
+    credential: applicationDefault(),
     projectId: firebaseConfig.projectId,
   });
 }
