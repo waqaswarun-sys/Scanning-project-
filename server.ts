@@ -19,7 +19,7 @@ import fs from "fs";
 import * as XLSX from "xlsx";
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSunday } from "date-fns";
 import bcrypt from "bcryptjs";
-import { Site, Employee, ScanningData, Stats } from './src/types';
+import { Site, Employee, ScanningData, Stats } from './src/types.ts';
 
 const db = new Database("scanning.db");
 db.prepare("PRAGMA journal_mode=WAL").run();
@@ -291,7 +291,7 @@ async function startServer() {
       const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
       
       if (user && bcrypt.compareSync(password, user.password)) {
-        console.log(`[AUTH] User found: ${username}, role: ${user.role}`);
+        console.log(`[AUTH] User found: ${username}, ID: ${user.id}, role: ${user.role}`);
         const userData = {
           id: user.id,
           username: user.username,
@@ -331,7 +331,9 @@ async function startServer() {
   app.get("/api/me", (req: any, res: any) => {
     try {
       const token = req.headers['x-auth-token'] || req.query.token;
-      console.log(`[AUTH] /api/me check. Token present: ${!!token}, Session present: ${!!(req.session && req.session.user)}`);
+      const sessionUser = req.session?.user;
+      
+      console.log(`[AUTH] /api/me check. Path: ${req.url}, Token: ${token ? token.substring(0, 8) + '...' : 'missing'}, Session: ${sessionUser ? sessionUser.username : 'missing'}`);
       
       if (token && typeof token === 'string' && token.length > 0) {
         const tokenData = db.prepare(`
@@ -349,16 +351,20 @@ async function startServer() {
             permissions: typeof tokenData.permissions === 'string' ? JSON.parse(tokenData.permissions || '[]') : (tokenData.permissions || []),
             site_access: typeof tokenData.site_access === 'string' ? JSON.parse(tokenData.site_access || '[]') : (tokenData.site_access || [])
           };
-          console.log(`[AUTH] /api/me found user via token: ${userData.username}`);
+          console.log(`[AUTH] /api/me success via token for ${userData.username}`);
           
           // Sync session if it's missing but token is valid
           if (req.session && !req.session.user) {
+            console.log(`[AUTH] Syncing session for ${userData.username}`);
             req.session.user = userData;
           }
           
           return res.json(userData);
         } else {
-          console.log(`[AUTH] /api/me token lookup failed for token starting with: ${token.substring(0, 5)}`);
+          console.log(`[AUTH] /api/me token lookup failed for: ${token.substring(0, 8)}...`);
+          // Check if token exists at all in DB (debug only)
+          const exists = db.prepare("SELECT COUNT(*) as count FROM user_tokens WHERE token = ?").get(token) as any;
+          console.log(`[AUTH] Token exists in DB: ${exists.count > 0}`);
         }
       }
       
@@ -382,11 +388,11 @@ async function startServer() {
         }
       }
       
-      console.log('[AUTH] /api/me no user found (no valid token or session)');
-      res.json(null);
+      console.log(`[AUTH] /api/me failed. Token: ${token ? 'present' : 'missing'}, Session: ${sessionUser ? 'present' : 'missing'}`);
+      res.status(401).json({ error: "Unauthorized" });
     } catch (err) {
-      console.error('[API] /api/me error:', err);
-      res.status(500).json(null);
+      console.error('[AUTH] /api/me error:', err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
