@@ -29,10 +29,12 @@ export interface Stats {
     month: string;
     files: number;
     pages: number;
+    extra_pages: number;
   }>;
   weekly: Array<{
     date: string;
     files: number;
     pages: number;
   }>;
+  mode: 'main' | 'personal';
 }
