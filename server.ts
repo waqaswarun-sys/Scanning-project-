@@ -4,6 +4,8 @@ import { createServer as createViteServer } from "vite";
 import * as admin from "firebase-admin";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import compression from "compression";
+import rateLimit from "express-rate-limit";
 
 declare module 'express-session' {
   interface SessionData {
@@ -118,8 +120,20 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
+  // Compression - responses 70% smaller
+  app.use(compression());
+
   app.use(express.json());
   app.set('trust proxy', 1); // trust first proxy
+
+  // Rate limiting - max 5 login attempts per 15 minutes per IP
+  const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    message: { error: 'Too many login attempts. Please try again after 15 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
   app.use(session({
     secret: process.env.SESSION_SECRET || 'scanning-track-v1',
     resave: false,
@@ -156,20 +170,27 @@ async function startServer() {
         
         if (tokenSnapshot.exists) {
           const tokenData = tokenSnapshot.data();
-          const userSnapshot = await db.collection('users').doc(tokenData?.user_id).get();
-          
-          if (userSnapshot.exists) {
-            const userData = userSnapshot.data();
-            req.user = {
-              id: userSnapshot.id,
-              username: userData?.username,
-              role: userData?.role,
-              employee_id: userData?.employee_id,
-              permissions: userData?.permissions || [],
-              site_access: userData?.site_access || []
-            };
-            console.log(`[AUTH] Authorized via token: ${userData?.username}`);
-            return next();
+
+          // Check token expiry
+          if (tokenData?.expires_at && tokenData.expires_at.toDate() < new Date()) {
+            console.log(`[AUTH] Token expired, deleting...`);
+            await db.collection('user_tokens').doc(token).delete();
+          } else {
+            const userSnapshot = await db.collection('users').doc(tokenData?.user_id).get();
+            
+            if (userSnapshot.exists) {
+              const userData = userSnapshot.data();
+              req.user = {
+                id: userSnapshot.id,
+                username: userData?.username,
+                role: userData?.role,
+                employee_id: userData?.employee_id,
+                permissions: userData?.permissions || [],
+                site_access: userData?.site_access || []
+              };
+              console.log(`[AUTH] Authorized via token: ${userData?.username}`);
+              return next();
+            }
           }
         } else {
           console.log(`[AUTH] Invalid token provided: ${token.substring(0, 5)}...`);
@@ -203,7 +224,7 @@ async function startServer() {
   };
 
   // Auth Routes
-  app.post("/api/login", async (req: any, res: any) => {
+  app.post("/api/login", loginLimiter, async (req: any, res: any) => {
     try {
       const { username, password } = req.body;
       
@@ -239,12 +260,14 @@ async function startServer() {
           site_access: user.site_access || []
         };
 
-        // Generate token
+        // Generate token with 7 day expiry
         const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+        const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
         console.log(`[AUTH] Generating token for ${username}`);
         await db.collection('user_tokens').doc(token).set({
           user_id: userDoc.id,
-          created_at: FieldValue.serverTimestamp()
+          created_at: FieldValue.serverTimestamp(),
+          expires_at: tokenExpiry
         });
 
         // Set session user directly
@@ -415,7 +438,8 @@ async function startServer() {
         ...doc.data()
       }));
       res.json(users.map((u: any) => ({ 
-        ...u, 
+        ...u,
+        password: undefined, // Never expose password hash
         permissions: u.permissions || [],
         site_access: u.site_access || [],
         employee_id: u.employee_id
