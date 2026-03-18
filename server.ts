@@ -108,8 +108,55 @@ async function seedData() {
 
 seedData().catch(console.error);
 
+// Clean up expired tokens — runs every 6 hours
+async function cleanupExpiredTokens() {
+  try {
+    const now = new Date();
+    const expiredTokens = await db.collection('user_tokens')
+      .where('expires_at', '<', now)
+      .get();
+    
+    if (!expiredTokens.empty) {
+      const batch = db.batch();
+      expiredTokens.docs.forEach(doc => batch.delete(doc.ref));
+      await batch.commit();
+      console.log(`[CLEANUP] Deleted ${expiredTokens.docs.length} expired tokens`);
+    }
+  } catch (err) {
+    console.error('[CLEANUP] Token cleanup error:', err);
+  }
+}
 
-// Helper for deterministic random split
+// Also clean up old reset tokens
+async function cleanupExpiredResetTokens() {
+  try {
+    const now = new Date();
+    const expiredTokens = await db.collection('password_reset_tokens')
+      .where('expires_at', '<', now)
+      .get();
+    
+    if (!expiredTokens.empty) {
+      const batch = db.batch();
+      expiredTokens.docs.forEach(doc => batch.delete(doc.ref));
+      await batch.commit();
+      console.log(`[CLEANUP] Deleted ${expiredTokens.docs.length} expired reset tokens`);
+    }
+  } catch (err) {
+    console.error('[CLEANUP] Reset token cleanup error:', err);
+  }
+}
+
+// Run cleanup every 6 hours
+setInterval(() => {
+  cleanupExpiredTokens().catch(console.error);
+  cleanupExpiredResetTokens().catch(console.error);
+}, 6 * 60 * 60 * 1000);
+
+// Run once on startup after 30 seconds
+setTimeout(() => {
+  cleanupExpiredTokens().catch(console.error);
+  cleanupExpiredResetTokens().catch(console.error);
+}, 30000);
 function getDeterministicSplit(totalExtra: number, employeeId: string, allActiveEmployeeIds: string[], dateStr: string) {
   if (allActiveEmployeeIds.length === 0) return 0;
   if (allActiveEmployeeIds.length === 1) return allActiveEmployeeIds[0] === employeeId ? totalExtra : 0;

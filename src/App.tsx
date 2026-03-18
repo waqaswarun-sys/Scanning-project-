@@ -50,16 +50,16 @@ const Card = ({ children, className }: { children: React.ReactNode; className?: 
 );
 
 const StatCard = ({ title, value, icon: Icon, colorClass, loading }: { title: string; value: string | number; icon: any; colorClass: string; loading?: boolean }) => (
-  <Card className="flex items-center gap-4">
-    <div className={cn("p-3 rounded-xl", colorClass)}>
-      <Icon className="w-6 h-6 text-white" />
+  <Card className="flex items-center gap-2 md:gap-4 p-3 md:p-6">
+    <div className={cn("p-2 md:p-3 rounded-xl shrink-0", colorClass)}>
+      <Icon className="w-4 h-4 md:w-6 md:h-6 text-white" />
     </div>
-    <div>
-      <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">{title}</p>
+    <div className="min-w-0">
+      <p className="text-[9px] md:text-sm font-medium text-slate-500 uppercase tracking-wider truncate">{title}</p>
       {loading ? (
-        <div className="h-8 w-24 bg-slate-100 animate-pulse rounded-lg mt-1" />
+        <div className="h-6 md:h-8 w-16 md:w-24 bg-slate-100 animate-pulse rounded-lg mt-1" />
       ) : (
-        <h3 className="text-2xl font-bold text-slate-900">{value}</h3>
+        <h3 className="text-lg md:text-2xl font-bold text-slate-900">{value}</h3>
       )}
     </div>
   </Card>
@@ -995,7 +995,7 @@ export default function App() {
         </div>
       </nav>
 
-      <main className="pb-12 px-4 md:px-8 max-w-7xl mx-auto pt-24">
+      <main className="pb-20 px-3 md:px-8 max-w-7xl mx-auto pt-20">
         <AnimatePresence mode="wait">
           {view === 'main-view' && hasPermission('main-view') ? (
             <motion.div 
@@ -1007,12 +1007,12 @@ export default function App() {
             >
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
                 <div>
-                  <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Dashboard</h2>
+                  <h2 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">Dashboard</h2>
                   <p className="text-slate-500 font-medium">Welcome back, {currentUser?.username || 'Admin'}</p>
                 </div>
               </div>
               {/* Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
                 <StatCard 
                   title="Scanned Files" 
                   value={stats?.overall.total_files?.toLocaleString() || '0'} 
@@ -1932,6 +1932,29 @@ export default function App() {
           )}
         </AnimatePresence>
     </main>
+
+    {/* Mobile swipe page indicator */}
+    {(() => {
+      const views = getSwipeViews();
+      const currentIndex = views.indexOf(view);
+      if (views.length <= 1) return null;
+      return (
+        <div className="fixed bottom-4 left-0 right-0 flex justify-center gap-1.5 md:hidden z-40">
+          {views.map((v, i) => (
+            <button
+              key={v}
+              onClick={() => setView(v as any)}
+              className={cn(
+                "rounded-full transition-all",
+                i === currentIndex 
+                  ? "w-4 h-1.5 bg-indigo-600" 
+                  : "w-1.5 h-1.5 bg-slate-300"
+              )}
+            />
+          ))}
+        </div>
+      );
+    })()}
   </div>
 );
 }
