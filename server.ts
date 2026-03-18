@@ -7,6 +7,23 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 
+// Simple in-memory cache (60 second TTL)
+const cache = new Map<string, { data: any; expires: number }>();
+function getCache(key: string) {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expires) { cache.delete(key); return null; }
+  return entry.data;
+}
+function setCache(key: string, data: any, ttlMs = 60000) {
+  cache.set(key, { data, expires: Date.now() + ttlMs });
+}
+function clearCache(pattern: string) {
+  for (const key of cache.keys()) {
+    if (key.includes(pattern)) cache.delete(key);
+  }
+}
+
 declare module 'express-session' {
   interface SessionData {
     user: {
@@ -553,45 +570,56 @@ async function startServer() {
   });
 
   app.get("/api/sites-summary", requireAuth, async (req: any, res) => {
+    const cacheKey = `sites-summary-${req.user.role}-${req.user.id}`;
+    const cached = getCache(cacheKey);
+    if (cached) return res.json(cached);
+
     try {
       const sitesSnapshot = await db.collection('sites').get();
       const accessibleSiteIds = req.user.role === 'admin' 
         ? sitesSnapshot.docs.map(doc => doc.id)
         : (Array.isArray(req.user.site_access) ? req.user.site_access.map(String) : []);
 
-      if (accessibleSiteIds.length === 0) {
-        return res.json([]);
-      }
+      if (accessibleSiteIds.length === 0) return res.json([]);
 
-      const summary = [];
-      for (const siteId of accessibleSiteIds) {
+      // Fetch all scanning_data and extra_pages in 2 calls instead of N*2 calls
+      const [scanningSnapshot, extraSnapshot] = await Promise.all([
+        db.collection('scanning_data').get(),
+        db.collection('daily_extra_pages').get()
+      ]);
+
+      // Build maps for fast lookup
+      const scanningBySite = new Map<string, { files: number; pages: number }>();
+      scanningSnapshot.docs.forEach(doc => {
+        const d = doc.data();
+        const existing = scanningBySite.get(d.site_id) || { files: 0, pages: 0 };
+        existing.files += (d.files || 0);
+        existing.pages += (d.pages || 0);
+        scanningBySite.set(d.site_id, existing);
+      });
+
+      const extraBySite = new Map<string, number>();
+      extraSnapshot.docs.forEach(doc => {
+        const d = doc.data();
+        extraBySite.set(d.site_id, (extraBySite.get(d.site_id) || 0) + (d.extra_pages || 0));
+      });
+
+      const summary = accessibleSiteIds.map(siteId => {
         const siteDoc = sitesSnapshot.docs.find(doc => doc.id === siteId);
-        if (!siteDoc) continue;
+        if (!siteDoc) return null;
         const siteData = siteDoc.data();
-
-        const scanningSnapshot = await db.collection('scanning_data').where('site_id', '==', siteId).get();
-        const extraSnapshot = await db.collection('daily_extra_pages').where('site_id', '==', siteId).get();
-
-        let totalFiles = 0;
-        let totalPages = 0;
-        scanningSnapshot.docs.forEach(doc => {
-          totalFiles += (doc.data().files || 0);
-          totalPages += (doc.data().pages || 0);
-        });
-
-        let extraPages = 0;
-        extraSnapshot.docs.forEach(doc => {
-          extraPages += (doc.data().extra_pages || 0);
-        });
-
-        summary.push({
+        const scanning = scanningBySite.get(siteId) || { files: 0, pages: 0 };
+        const extraPages = extraBySite.get(siteId) || 0;
+        return {
           id: siteId,
           name: siteData.name,
-          total_files: totalFiles,
-          total_pages: totalPages + extraPages,
+          total_files: scanning.files,
+          total_pages: scanning.pages + extraPages,
           extra_pages: extraPages
-        });
-      }
+        };
+      }).filter(Boolean);
+
+      setCache(cacheKey, summary);
       res.json(summary);
     } catch (err) {
       console.error('[SITES-SUMMARY] Error:', err);
@@ -606,6 +634,10 @@ async function startServer() {
       return res.status(403).json({ error: "Access denied to this site" });
     }
 
+    const cacheKey = `operators-summary-${siteId || 'all'}-${month || 'all'}-${req.user.id}`;
+    const cached = getCache(cacheKey);
+    if (cached) return res.json(cached);
+
     try {
       const sitesSnapshot = await db.collection('sites').get();
       const sitesMap = new Map();
@@ -615,9 +647,7 @@ async function startServer() {
         ? sitesSnapshot.docs.map(doc => doc.id)
         : (Array.isArray(req.user.site_access) ? req.user.site_access.map(String) : []);
 
-      if (req.user.role !== 'admin' && accessibleSiteIds.length === 0) {
-        return res.json([]);
-      }
+      if (req.user.role !== 'admin' && accessibleSiteIds.length === 0) return res.json([]);
 
       let employeesQuery: admin.firestore.Query = db.collection('employees').where('is_active', '==', true);
       if (siteId) {
@@ -631,29 +661,42 @@ async function startServer() {
       const employeesSnapshot = await employeesQuery.get();
       const employees = employeesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
 
-      const summary = [];
-      for (const e of employees as any[]) {
-        let scanningQuery: admin.firestore.Query = db.collection('scanning_data').where('employee_id', '==', e.id);
-        if (month) {
-          scanningQuery = scanningQuery.where('date', '>=', month + "-01").where('date', '<=', month + "-31");
-        }
-        const scanningSnapshot = await scanningQuery.get();
-        
-        let totalFiles = 0;
-        let totalPages = 0;
-        scanningSnapshot.docs.forEach(doc => {
-          totalFiles += (doc.data().files || 0);
-          totalPages += (doc.data().pages || 0);
-        });
+      if (employees.length === 0) return res.json([]);
 
-        summary.push({
+      // Fetch all scanning data in ONE call instead of N calls
+      let scanningQuery: admin.firestore.Query = db.collection('scanning_data');
+      if (siteId) {
+        scanningQuery = scanningQuery.where('site_id', '==', String(siteId));
+      }
+      if (month) {
+        scanningQuery = scanningQuery
+          .where('date', '>=', month + "-01")
+          .where('date', '<=', month + "-31");
+      }
+      const scanningSnapshot = await scanningQuery.get();
+
+      // Build map: employee_id -> { files, pages }
+      const scanningByEmployee = new Map<string, { files: number; pages: number }>();
+      scanningSnapshot.docs.forEach(doc => {
+        const d = doc.data();
+        const existing = scanningByEmployee.get(d.employee_id) || { files: 0, pages: 0 };
+        existing.files += (d.files || 0);
+        existing.pages += (d.pages || 0);
+        scanningByEmployee.set(d.employee_id, existing);
+      });
+
+      const summary = employees.map((e: any) => {
+        const totals = scanningByEmployee.get(e.id) || { files: 0, pages: 0 };
+        return {
           id: e.id,
           name: e.name,
           site_name: sitesMap.get(e.site_id) || 'Unknown',
-          total_files: totalFiles,
-          total_pages: totalPages
-        });
-      }
+          total_files: totals.files,
+          total_pages: totals.pages
+        };
+      });
+
+      setCache(cacheKey, summary, 60000);
       res.json(summary);
     } catch (err) {
       console.error('[OPERATORS-SUMMARY] Error:', err);
@@ -784,6 +827,10 @@ async function startServer() {
       }, { merge: true });
 
       await batch.commit();
+      // Clear caches so fresh data loads
+      clearCache(`stats-${siteId}`);
+      clearCache('sites-summary');
+      clearCache('operators-summary');
       res.json({ success: true });
     } catch (err) {
       console.error('[SCANNING_DATA] Save error:', err);
@@ -793,18 +840,18 @@ async function startServer() {
 
   app.get("/api/stats/:siteId", requireAuth, async (req: any, res) => {
     const siteId = req.params.siteId;
-    const mode = req.query.mode || 'main'; // 'main' or 'personal'
+    const mode = req.query.mode || 'main';
     const permission = mode === 'main' ? 'main-view' : 'personal-records';
 
     if (!checkSiteAccess(req.user, siteId, permission)) {
       return res.status(403).json({ error: "Access denied" });
     }
-    
+
+    const cacheKey = `stats-${siteId}-${mode}`;
+    const cached = getCache(cacheKey);
+    if (cached) return res.json(cached);
+
     try {
-      const siteDoc = await db.collection('sites').doc(siteId).get();
-      if (!siteDoc.exists) {
-        return res.status(404).json({ error: "Site not found" });
-      }
       const site = siteDoc.data();
 
       const scanningSnapshot = await db.collection('scanning_data').where('site_id', '==', siteId).get();
@@ -878,7 +925,9 @@ async function startServer() {
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, 30);
 
-      res.json({ overall, monthly: formattedMonthly, weekly, mode });
+      const result = { overall, monthly: formattedMonthly, weekly, mode };
+      setCache(cacheKey, result);
+      res.json(result);
     } catch (err) {
       console.error('[STATS] Error:', err);
       res.status(500).json({ error: "Internal server error" });
