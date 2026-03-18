@@ -21,6 +21,7 @@ export default function UserControlsPage({ apiFetch, currentUser }: UserControls
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserRole, setNewUserRole] = useState('user');
   const [newUserPermissions, setNewUserPermissions] = useState<string[]>(['main-view']);
   const [newUserSiteAccess, setNewUserSiteAccess] = useState<number[]>([]);
@@ -99,7 +100,8 @@ export default function UserControlsPage({ apiFetch, currentUser }: UserControls
           role: newUserRole,
           permissions: newUserPermissions,
           site_access: newUserSiteAccess,
-          employee_id: newUserEmployeeId
+          employee_id: newUserEmployeeId,
+          email: newUserEmail || undefined
         })
       });
 
@@ -107,6 +109,7 @@ export default function UserControlsPage({ apiFetch, currentUser }: UserControls
         setMessage({ type: 'success', text: editingUserId ? 'User updated' : 'User created' });
         setNewUserName('');
         setNewUserPassword('');
+        setNewUserEmail('');
         setNewUserPermissions(['main-view']);
         setNewUserSiteAccess([]);
         setNewUserEmployeeId(null);
@@ -360,6 +363,18 @@ export default function UserControlsPage({ apiFetch, currentUser }: UserControls
                     </div>
 
                     <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Email (for password reset)</label>
+                      <input 
+                        type="email"
+                        value={newUserEmail}
+                        onChange={(e) => setNewUserEmail(e.target.value)}
+                        placeholder="user@example.com"
+                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                      />
+                      <p className="mt-1 text-[10px] text-slate-400 italic">Required for forgot password feature.</p>
+                    </div>
+
+                    <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase mb-3">Page Access (Permissions)</label>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         {availablePermissions.map(perm => (
@@ -506,6 +521,7 @@ export default function UserControlsPage({ apiFetch, currentUser }: UserControls
                                       setNewUserPermissions(user.permissions);
                                       setNewUserSiteAccess(Array.isArray(user.site_access) ? user.site_access : []);
                                       setNewUserEmployeeId(user.employee_id);
+                                      setNewUserEmail(user.email || '');
                                       setNewUserPassword('');
                                       setShowAddUser(true);
                                     }}

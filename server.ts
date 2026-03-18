@@ -6,6 +6,7 @@ import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
+import { Resend } from "resend";
 
 // Simple in-memory cache (60 second TTL)
 const cache = new Map<string, { data: any; expires: number }>();
@@ -59,6 +60,7 @@ if (!getApps().length) {
 }
 
 const db = getFirestore();
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 
 // Seed default admin if not exists
@@ -397,6 +399,101 @@ async function startServer() {
     });
   });
 
+  // Forgot Password
+  app.post("/api/forgot-password", async (req: any, res: any) => {
+    const { username, email } = req.body;
+    if (!username || !email) {
+      return res.status(400).json({ error: "Username and email required" });
+    }
+    try {
+      const userSnapshot = await db.collection('users').where('username', '==', username).get();
+      if (userSnapshot.empty) {
+        // Don't reveal user doesn't exist
+        return res.json({ success: true });
+      }
+      const userDoc = userSnapshot.docs[0];
+      const user = userDoc.data();
+
+      // Block admin reset via email
+      if (user.role === 'admin') {
+        return res.json({ success: true });
+      }
+
+      // Check email matches
+      if (!user.email || user.email.toLowerCase() !== email.toLowerCase()) {
+        return res.json({ success: true });
+      }
+
+      // Generate reset token (1 hour expiry)
+      const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+      const expires = new Date(Date.now() + 60 * 60 * 1000);
+      await db.collection('password_reset_tokens').doc(token).set({
+        user_id: userDoc.id,
+        expires_at: expires,
+        created_at: FieldValue.serverTimestamp()
+      });
+
+      const resetUrl = `https://scantrackpro.online/reset-password?token=${token}`;
+      await resend.emails.send({
+        from: 'ScanTrack Pro <noreply@scantrackpro.online>',
+        to: user.email,
+        subject: 'Password Reset Request',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+            <div style="background: #4f46e5; padding: 24px; border-radius: 12px 12px 0 0; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 24px;">ScanTrack Pro</h1>
+            </div>
+            <div style="background: white; border: 1px solid #e2e8f0; border-top: none; padding: 32px; border-radius: 0 0 12px 12px;">
+              <h2 style="color: #1e293b; margin-top: 0;">Password Reset Request</h2>
+              <p style="color: #64748b;">Hi <strong>${user.username}</strong>, we received a request to reset your password.</p>
+              <a href="${resetUrl}" style="display: inline-block; background: #4f46e5; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 16px 0;">Reset Password</a>
+              <p style="color: #94a3b8; font-size: 12px;">This link expires in 1 hour. If you did not request this, ignore this email.</p>
+            </div>
+          </div>
+        `
+      });
+
+      console.log(`[FORGOT-PASSWORD] Reset email sent to ${user.email}`);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('[FORGOT-PASSWORD] Error:', err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Reset Password
+  app.post("/api/reset-password", async (req: any, res: any) => {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: "Invalid request. Password must be at least 6 characters." });
+    }
+    try {
+      const tokenDoc = await db.collection('password_reset_tokens').doc(token).get();
+      if (!tokenDoc.exists) {
+        return res.status(400).json({ error: "Invalid or expired reset link." });
+      }
+      const tokenData = tokenDoc.data();
+      if (tokenData?.expires_at.toDate() < new Date()) {
+        await db.collection('password_reset_tokens').doc(token).delete();
+        return res.status(400).json({ error: "Reset link has expired. Please request a new one." });
+      }
+
+      const hashedPassword = bcrypt.hashSync(newPassword, 10);
+      await db.collection('users').doc(tokenData?.user_id).update({
+        password: hashedPassword,
+        updated_at: FieldValue.serverTimestamp()
+      });
+
+      // Delete used token
+      await db.collection('password_reset_tokens').doc(token).delete();
+      console.log(`[RESET-PASSWORD] Password reset for user ${tokenData?.user_id}`);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('[RESET-PASSWORD] Error:', err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.post("/api/update-profile", requireAuth, async (req: any, res: any) => {
     const { username, currentPassword, newPassword } = req.body;
     const userId = req.user.id;
@@ -469,7 +566,7 @@ async function startServer() {
 
   app.post("/api/users", requireAuth, async (req: any, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
-    const { username, password, role, permissions, site_access, employee_id } = req.body;
+    const { username, password, role, permissions, site_access, employee_id, email } = req.body;
     
     if (!username || !password || typeof username !== 'string' || username.length < 3) {
       return res.status(400).json({ error: "Invalid username or password" });
@@ -490,6 +587,7 @@ async function startServer() {
         permissions: permissions || [],
         site_access: site_access || [],
         employee_id: employee_id || null,
+        email: email || null,
         created_at: FieldValue.serverTimestamp()
       });
       res.json({ success: true });
@@ -501,7 +599,7 @@ async function startServer() {
 
   app.put("/api/users/:id", requireAuth, async (req: any, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
-    const { username, password, role, permissions, site_access, employee_id } = req.body;
+    const { username, password, role, permissions, site_access, employee_id, email } = req.body;
     const userId = req.params.id;
     
     if (!username || typeof username !== 'string' || username.length < 3) {
@@ -521,6 +619,7 @@ async function startServer() {
         permissions: permissions || [],
         site_access: site_access || [],
         employee_id: employee_id || null,
+        email: email || null,
         updated_at: FieldValue.serverTimestamp()
       };
 
