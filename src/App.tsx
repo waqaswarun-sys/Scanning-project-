@@ -306,7 +306,13 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setAllOperators(data);
-        if (data.length > 0 && !selectedOperatorId) {
+        // Filter by selected site if admin
+        const filtered = selectedSiteId && currentUser?.role === 'admin'
+          ? data.filter((op: any) => String(op.site_id) === String(selectedSiteId))
+          : data;
+        if (filtered.length > 0) {
+          setSelectedOperatorId(filtered[0].id);
+        } else if (data.length > 0 && !selectedOperatorId) {
           setSelectedOperatorId(data[0].id);
         }
       }
@@ -404,7 +410,12 @@ export default function App() {
       }
       const data = await res.json();
       setSites(data);
-      if (data.length > 0 && !selectedSiteId) setSelectedSiteId(data[0].id);
+      if (data.length > 0 && !selectedSiteId) {
+        setSelectedSiteId(data[0].id);
+      } else if (selectedSiteId && !data.find((s: any) => String(s.id) === String(selectedSiteId))) {
+        // Selected site was deleted, pick first available
+        setSelectedSiteId(data.length > 0 ? data[0].id : null);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -596,9 +607,13 @@ export default function App() {
       }
 
       setConfirmDeleteSite(null);
-      fetchSites();
-      fetchSitesSummary();
-      if (selectedSiteId === id) setSelectedSiteId(null);
+      // If deleted site was selected, clear it
+      if (String(selectedSiteId) === String(id)) {
+        setSelectedSiteId(null);
+        setStats(null);
+      }
+      await fetchSites();
+      await fetchSitesSummary();
     } catch (err) {
       console.error('Site delete error:', err);
       alert(err instanceof Error ? err.message : 'Error deleting site. Please try again.');
@@ -853,7 +868,7 @@ export default function App() {
                     <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter leading-none mb-0.5">Active Site</span>
                     <select 
                       value={selectedSiteId || ''} 
-                      onChange={(e) => setSelectedSiteId(Number(e.target.value))}
+                      onChange={(e) => setSelectedSiteId(e.target.value)}
                       className="appearance-none bg-transparent text-[11px] sm:text-xs font-bold text-slate-700 focus:outline-none cursor-pointer pr-4"
                     >
                       {sites.map(site => (
@@ -1700,12 +1715,14 @@ export default function App() {
                     <Users className="w-4 h-4 text-indigo-600 ml-2" />
                     <select 
                       value={selectedOperatorId || ''}
-                      onChange={(e) => setSelectedOperatorId(Number(e.target.value))}
+                      onChange={(e) => setSelectedOperatorId(e.target.value)}
                       className="bg-transparent text-sm font-bold text-slate-700 outline-none pr-4"
                     >
-                      {allOperators.map(op => (
-                        <option key={op.id} value={op.id}>{op.name} ({op.site_name})</option>
-                      ))}
+                      {allOperators
+                        .filter((op: any) => !selectedSiteId || String(op.site_id) === String(selectedSiteId))
+                        .map(op => (
+                          <option key={op.id} value={op.id}>{op.name} ({op.site_name})</option>
+                        ))}
                     </select>
                   </div>
                 )}
