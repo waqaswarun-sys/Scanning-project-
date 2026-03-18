@@ -91,6 +91,9 @@ export default function App() {
   const [adminData, setAdminData] = useState<ScanningData[]>([]);
   const [extraPages, setExtraPages] = useState<number | string>(0);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isDownloading, setIsDownloading] = useState<'personal' | 'main' | null>(null);
+  const [addEmployeeMessage, setAddEmployeeMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [exportMonth, setExportMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [operatorsMonth, setOperatorsMonth] = useState(format(new Date(), 'yyyy-MM'));
 
@@ -448,6 +451,7 @@ export default function App() {
   const saveAdminData = async () => {
     if (!selectedSiteId) return;
     setIsSaving(true);
+    setSaveMessage(null);
     try {
       const res = await apiFetch('/api/scanning-data', {
         method: 'POST',
@@ -465,19 +469,40 @@ export default function App() {
       });
       
       if (res.ok) {
+        setSaveMessage({ type: 'success', text: 'Data saved successfully!' });
         fetchStats(view === 'admin' ? 'personal' : 'main');
+        setTimeout(() => setSaveMessage(null), 3000);
+      } else {
+        setSaveMessage({ type: 'error', text: 'Failed to save data. Please try again.' });
       }
     } catch (err) {
       console.error(err);
+      setSaveMessage({ type: 'error', text: 'Network error. Please try again.' });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const downloadReport = (mode: 'personal' | 'main' = 'personal') => {
+  const downloadReport = async (mode: 'personal' | 'main' = 'personal') => {
     if (!selectedSiteId) return;
+    setIsDownloading(mode);
     const token = localStorage.getItem('authToken');
-    window.location.href = `/api/export/${selectedSiteId}?month=${exportMonth}&mode=${mode}&token=${token || ''}`;
+    const url = `/api/export/${selectedSiteId}?month=${exportMonth}&mode=${mode}&token=${token || ''}`;
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${exportMonth}-${mode}.xlsx`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsDownloading(null);
+    }
   };
 
   const handleAddSite = async () => {
@@ -501,17 +526,26 @@ export default function App() {
 
   const handleAddEmployee = async () => {
     if (!newEmployeeName || !selectedSiteId) return;
+    setAddEmployeeMessage(null);
     try {
-      await apiFetch('/api/employees', {
+      const res = await apiFetch('/api/employees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newEmployeeName, site_id: selectedSiteId })
       });
-      setNewEmployeeName('');
-      await fetchAdminData();
-      await fetchStats();
+      if (res.ok) {
+        setAddEmployeeMessage({ type: 'success', text: `"${newEmployeeName}" added successfully!` });
+        setNewEmployeeName('');
+        await fetchAdminData();
+        await fetchStats();
+        setTimeout(() => setAddEmployeeMessage(null), 3000);
+      } else {
+        const data = await res.json();
+        setAddEmployeeMessage({ type: 'error', text: data.error || 'Failed to add operator.' });
+      }
     } catch (err) {
       console.error(err);
+      setAddEmployeeMessage({ type: 'error', text: 'Network error. Please try again.' });
     }
   };
 
@@ -1166,6 +1200,15 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+                {saveMessage && (
+                  <div className={cn(
+                    "mb-4 px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2",
+                    saveMessage.type === 'success' ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"
+                  )}>
+                    {saveMessage.type === 'success' ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                    {saveMessage.text}
+                  </div>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -1263,18 +1306,28 @@ export default function App() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <button 
                         onClick={() => downloadReport('personal')}
-                        className="flex flex-col items-center justify-center p-6 bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all group"
+                        disabled={isDownloading !== null}
+                        className="flex flex-col items-center justify-center p-6 bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all group disabled:opacity-60"
                       >
-                        <FileText className="w-8 h-8 text-slate-400 mb-2 group-hover:text-indigo-600 transition-colors" />
-                        <span className="text-sm font-bold text-slate-700">Personal Sheet</span>
+                        {isDownloading === 'personal' ? (
+                          <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mb-2" />
+                        ) : (
+                          <FileText className="w-8 h-8 text-slate-400 mb-2 group-hover:text-indigo-600 transition-colors" />
+                        )}
+                        <span className="text-sm font-bold text-slate-700">{isDownloading === 'personal' ? 'Downloading...' : 'Personal Sheet'}</span>
                         <span className="text-[10px] text-slate-400 uppercase mt-1">Excel Format</span>
                       </button>
                       <button 
                         onClick={() => downloadReport('main')}
-                        className="flex flex-col items-center justify-center p-6 bg-indigo-600 rounded-2xl hover:bg-indigo-700 transition-all group shadow-lg shadow-indigo-500/20"
+                        disabled={isDownloading !== null}
+                        className="flex flex-col items-center justify-center p-6 bg-indigo-600 rounded-2xl hover:bg-indigo-700 transition-all group shadow-lg shadow-indigo-500/20 disabled:opacity-60"
                       >
-                        <Download className="w-8 h-8 text-white/80 mb-2 group-hover:text-white transition-colors" />
-                        <span className="text-sm font-bold text-white">Main Sheet</span>
+                        {isDownloading === 'main' ? (
+                          <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-2" />
+                        ) : (
+                          <Download className="w-8 h-8 text-white/80 mb-2 group-hover:text-white transition-colors" />
+                        )}
+                        <span className="text-sm font-bold text-white">{isDownloading === 'main' ? 'Downloading...' : 'Main Sheet'}</span>
                         <span className="text-[10px] text-white/60 uppercase mt-1">Excel Format</span>
                       </button>
                     </div>
@@ -1484,6 +1537,15 @@ export default function App() {
                     >
                       Add Operator
                     </button>
+                    {addEmployeeMessage && (
+                      <div className={cn(
+                        "px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2",
+                        addEmployeeMessage.type === 'success' ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"
+                      )}>
+                        {addEmployeeMessage.type === 'success' ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                        {addEmployeeMessage.text}
+                      </div>
+                    )}
                   </div>
                 </Card>
 
