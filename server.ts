@@ -852,6 +852,8 @@ async function startServer() {
     if (cached) return res.json(cached);
 
     try {
+      const siteDoc = await db.collection('sites').doc(siteId).get();
+      if (!siteDoc.exists) return res.status(404).json({ error: "Site not found" });
       const site = siteDoc.data();
 
       const scanningSnapshot = await db.collection('scanning_data').where('site_id', '==', siteId).get();
