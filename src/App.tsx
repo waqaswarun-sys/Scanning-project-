@@ -178,7 +178,10 @@ export default function App() {
           const permissions = user.role === 'admin' ? ['main-view', 'user-controls', 'admin-operators', 'admin-sites', 'admin-management'] : (user.permissions || []);
           setView(currentView => {
             if (user.role !== 'admin') {
-              return permissions.includes('operator-summary') ? 'operator-summary' : (permissions.length > 0 ? permissions[0] : 'main-view');
+              // Dashboard first if assigned, else first available permission
+              if (permissions.includes('main-view')) return 'main-view';
+              if (permissions.includes('operator-summary')) return 'operator-summary';
+              return permissions.length > 0 ? permissions[0] as any : 'main-view';
             }
             return currentView;
           });
@@ -652,6 +655,45 @@ export default function App() {
 
   const forecast = getCompletionForecast();
 
+  // Ordered views for swipe navigation based on user permissions
+  const getSwipeViews = () => {
+    if (currentUser?.role === 'admin') {
+      return ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'operator-summary', 'user-controls'];
+    }
+    const permOrder = ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'operator-summary'];
+    return permOrder.filter(p => hasPermission(p));
+  };
+
+  const handleSwipe = (direction: 'left' | 'right') => {
+    const views = getSwipeViews();
+    const currentIndex = views.indexOf(view);
+    if (currentIndex === -1) return;
+    if (direction === 'left' && currentIndex < views.length - 1) {
+      setView(views[currentIndex + 1] as any);
+    } else if (direction === 'right' && currentIndex > 0) {
+      setView(views[currentIndex - 1] as any);
+    }
+  };
+
+  // Touch swipe state
+  const touchStartX = React.useRef<number>(0);
+  const touchStartY = React.useRef<number>(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+    // Only swipe if horizontal movement > 80px and more horizontal than vertical
+    if (Math.abs(deltaX) > 80 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+      if (deltaX < 0) handleSwipe('left');   // swipe left = next page
+      else handleSwipe('right');              // swipe right = prev page
+    }
+  };
+
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -677,7 +719,11 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+    <div 
+      className="min-h-screen bg-slate-50 text-slate-900 font-sans"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       {/* Sidebar / Nav */}
       <nav className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-black/5 z-50 px-4 md:px-8 flex items-center justify-between">
         <div className="flex items-center gap-2">
