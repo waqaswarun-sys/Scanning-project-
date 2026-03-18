@@ -306,6 +306,13 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setAllOperators(data);
+
+        // If user is linked to an operator, always select that one
+        if (currentUser?.employee_id) {
+          setSelectedOperatorId(currentUser.employee_id);
+          return;
+        }
+
         // Filter by selected site if admin
         const filtered = selectedSiteId && currentUser?.role === 'admin'
           ? data.filter((op: any) => String(op.site_id) === String(selectedSiteId))
@@ -413,7 +420,6 @@ export default function App() {
       if (data.length > 0 && !selectedSiteId) {
         setSelectedSiteId(data[0].id);
       } else if (selectedSiteId && !data.find((s: any) => String(s.id) === String(selectedSiteId))) {
-        // Selected site was deleted, pick first available
         setSelectedSiteId(data.length > 0 ? data[0].id : null);
       }
     } catch (err) {
@@ -1754,7 +1760,9 @@ export default function App() {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-3xl font-bold text-slate-900 tracking-tight">
-                    {allOperators.find(op => op.id === selectedOperatorId)?.name || 'Operator'} Summary
+                    {currentUser?.employee_name 
+                      ? `${currentUser.employee_name} Summary`
+                      : `${allOperators.find(op => op.id === selectedOperatorId)?.name || 'Operator'} Summary`}
                   </h2>
                   <p className="text-slate-500 font-medium">View detailed performance per operator</p>
                 </div>

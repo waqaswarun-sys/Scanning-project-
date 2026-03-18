@@ -325,16 +325,24 @@ async function startServer() {
           const userSnapshot = await db.collection('users').doc(tokenData?.user_id).get();
           
           if (userSnapshot.exists) {
-            const user = userSnapshot.data();
-            const userData = {
-              id: userSnapshot.id,
-              username: user?.username,
-              role: user?.role,
-              employee_id: user?.employee_id,
-              permissions: user?.permissions || [],
-              site_access: user?.site_access || []
-            };
-            console.log(`[AUTH] /api/me success via token for ${userData.username}`);
+              const user = userSnapshot.data();
+              let employee_name = null;
+              if (user?.employee_id) {
+                try {
+                  const empDoc = await db.collection('employees').doc(user.employee_id).get();
+                  if (empDoc.exists) employee_name = empDoc.data()?.name || null;
+                } catch(e) {}
+              }
+              const userData = {
+                id: userSnapshot.id,
+                username: user?.username,
+                role: user?.role,
+                employee_id: user?.employee_id,
+                employee_name,
+                permissions: user?.permissions || [],
+                site_access: user?.site_access || []
+              };
+              console.log(`[AUTH] /api/me success via token for ${userData.username}`);
             
             // Sync session if it's missing but token is valid
             if (req.session && !req.session.user) {
@@ -352,11 +360,19 @@ async function startServer() {
         const userSnapshot = await db.collection('users').doc(req.session.user.id).get();
         if (userSnapshot.exists) {
           const user = userSnapshot.data();
+          let employee_name = null;
+          if (user?.employee_id) {
+            try {
+              const empDoc = await db.collection('employees').doc(user.employee_id).get();
+              if (empDoc.exists) employee_name = empDoc.data()?.name || null;
+            } catch(e) {}
+          }
           const userData = {
             id: userSnapshot.id,
             username: user?.username,
             role: user?.role,
             employee_id: user?.employee_id,
+            employee_name,
             permissions: user?.permissions || [],
             site_access: user?.site_access || []
           };
