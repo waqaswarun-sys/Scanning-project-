@@ -850,9 +850,57 @@ export default function App() {
               </AnimatePresence>
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl">
-              <User className="w-4 h-4 text-indigo-600" />
-              <span className="text-sm font-bold text-slate-700">{currentUser?.username}</span>
+            <div className="relative">
+              <button
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all border shadow-sm",
+                  isMenuOpen
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "bg-white text-slate-700 border-slate-200 hover:border-indigo-200 hover:bg-slate-50"
+                )}
+              >
+                <User className="w-4 h-4" />
+                <span>{currentUser?.username}</span>
+                <ChevronDown className={cn("w-3 h-3 transition-transform", isMenuOpen && "rotate-180")} />
+              </button>
+              <AnimatePresence>
+                {isMenuOpen && (
+                  <>
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      onClick={() => setIsMenuOpen(false)}
+                      className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40"
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute top-full right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-slate-200 z-50 overflow-hidden"
+                    >
+                      <div className="p-2 space-y-1">
+                        {hasPermission('main-view') && (
+                          <button onClick={() => { setView('main-view'); setIsMenuOpen(false); }} className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all", view === 'main-view' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50")}>
+                            <LayoutDashboard className="w-4 h-4" /> Dashboard
+                          </button>
+                        )}
+                        {hasPermission('personal-records') && (
+                          <button onClick={() => { setView('personal-records'); setIsMenuOpen(false); }} className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all", view === 'personal-records' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50")}>
+                            <TrendingUp className="w-4 h-4" /> Personal Records
+                          </button>
+                        )}
+                        {hasPermission('operator-summary') && (
+                          <button onClick={() => { setView('operator-summary'); setIsMenuOpen(false); }} className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all", view === 'operator-summary' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50")}>
+                            <FileText className="w-4 h-4" /> Operator Summary
+                          </button>
+                        )}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
             </div>
           )}
 
@@ -897,7 +945,7 @@ export default function App() {
 
       <main className="pb-12 px-4 md:px-8 max-w-7xl mx-auto pt-24">
         <AnimatePresence mode="wait">
-          {view === 'main-view' && hasPermission('main-view') && currentUser?.role === 'admin' ? (
+          {view === 'main-view' && hasPermission('main-view') ? (
             <motion.div 
               key="main-view"
               initial={{ opacity: 0, y: 10 }}
@@ -1126,7 +1174,7 @@ export default function App() {
                 </div>
               </div>
             </motion.div>
-          ) : view === 'personal-records' && hasPermission('personal-records') && currentUser?.role === 'admin' ? (
+          ) : view === 'personal-records' && hasPermission('personal-records') ? (
             <motion.div 
               key="personal-records"
               initial={{ opacity: 0, y: 10 }}

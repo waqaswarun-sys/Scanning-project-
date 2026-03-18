@@ -25,7 +25,7 @@ export default function UserControlsPage({ apiFetch, currentUser }: UserControls
   const [newUserRole, setNewUserRole] = useState('user');
   const [newUserPermissions, setNewUserPermissions] = useState<string[]>(['main-view']);
   const [newUserSiteAccess, setNewUserSiteAccess] = useState<number[]>([]);
-  const [newUserEmployeeId, setNewUserEmployeeId] = useState<number | null>(null);
+  const [newUserEmployeeId, setNewUserEmployeeId] = useState<string | null>(null);
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [allOperators, setAllOperators] = useState<any[]>([]);
 
@@ -436,7 +436,7 @@ export default function UserControlsPage({ apiFetch, currentUser }: UserControls
                       <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Link to Operator (Optional)</label>
                       <select 
                         value={newUserEmployeeId || ''}
-                        onChange={(e) => setNewUserEmployeeId(e.target.value ? Number(e.target.value) : null)}
+                        onChange={(e) => setNewUserEmployeeId(e.target.value ? e.target.value : null)}
                         className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 outline-none text-sm"
                       >
                         <option value="">None (Not an operator)</option>
