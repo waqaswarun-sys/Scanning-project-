@@ -911,9 +911,9 @@ export default function App() {
           )}
 
           <div className="flex items-center gap-2 sm:gap-4 ml-auto sm:ml-4 sm:pl-4 sm:border-l border-slate-200">
-            {currentUser?.role === 'admin' && (
+            {/* Site selector — admin always, non-admin only if 2+ sites */}
+            {(currentUser?.role === 'admin' || (currentUser?.role !== 'admin' && sites.length > 1)) && (
               <div className="flex items-center gap-2">
-                {/* Site Logo Badge */}
                 <div className="flex items-center gap-2 bg-slate-50 border border-black/5 rounded-xl px-2 py-1.5 sm:px-3">
                   <div className="w-6 h-6 bg-indigo-600 rounded-lg flex items-center justify-center text-[10px] font-bold text-white shadow-sm shadow-indigo-100 shrink-0">
                     {sites.find(s => s.id === selectedSiteId)?.name.substring(0, 2).toUpperCase() || 'ST'}

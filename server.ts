@@ -3,7 +3,7 @@ import session from "express-session";
 import { createServer as createViteServer } from "vite";
 import * as admin from "firebase-admin";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getFirestore, FieldValue, FieldPath, Query } from "firebase-admin/firestore";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 import { Resend } from "resend";
@@ -764,7 +764,7 @@ async function startServer() {
 
       if (req.user.role !== 'admin' && accessibleSiteIds.length === 0) return res.json([]);
 
-      let employeesQuery: admin.firestore.Query = db.collection('employees').where('is_active', '==', true);
+      let employeesQuery: Query = db.collection('employees').where('is_active', '==', true);
       if (siteId) {
         employeesQuery = employeesQuery.where('site_id', '==', String(siteId));
       } else if (req.user.role !== 'admin') {
@@ -779,7 +779,7 @@ async function startServer() {
       if (employees.length === 0) return res.json([]);
 
       // Fetch all scanning data in ONE call instead of N calls
-      let scanningQuery: admin.firestore.Query = db.collection('scanning_data');
+      let scanningQuery: Query = db.collection('scanning_data');
       if (siteId) {
         scanningQuery = scanningQuery.where('site_id', '==', String(siteId));
       }
@@ -1348,11 +1348,11 @@ async function startServer() {
 
       if (accessibleSiteIds.length === 0 && req.user.role !== 'admin' && !req.user.employee_id) return res.json([]);
 
-      let employeesQuery: admin.firestore.Query = db.collection('employees').where('is_active', '==', true);
+      let employeesQuery: Query = db.collection('employees').where('is_active', '==', true);
 
       if (req.user.role !== 'admin') {
         if (req.user.employee_id) {
-          employeesQuery = employeesQuery.where(admin.firestore.FieldPath.documentId(), '==', String(req.user.employee_id));
+          employeesQuery = employeesQuery.where(FieldPath.documentId(), '==', String(req.user.employee_id));
         } else if (accessibleSiteIds.length > 0) {
           // Firestore 'in' query has a limit of 10 items, but let's assume it's fine for now or handle it
           if (accessibleSiteIds.length <= 10) {
