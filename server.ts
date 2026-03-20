@@ -234,6 +234,69 @@ async function sendWhatsAppReport(siteId: string, date: string) {
   }
 }
 
+// Email daily report sender
+async function sendEmailReport(siteId: string, date: string) {
+  const reportEmail = process.env.REPORT_EMAIL;
+  if (!reportEmail) {
+    console.log('[EMAIL-REPORT] REPORT_EMAIL not set, skipping...');
+    return;
+  }
+  try {
+    const siteDoc = await db.collection('sites').doc(siteId).get();
+    if (!siteDoc.exists) return;
+    const siteName = siteDoc.data()?.name || siteId;
+
+    const scanningSnapshot = await db.collection('scanning_data')
+      .where('site_id', '==', siteId)
+      .where('date', '==', date)
+      .get();
+
+    const totalFiles = scanningSnapshot.docs.reduce((sum, doc) => sum + (doc.data().files || 0), 0);
+    const totalPages = scanningSnapshot.docs.reduce((sum, doc) => sum + (doc.data().pages || 0), 0);
+
+    const [year, month, day] = date.split('-');
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const formattedDate = `${parseInt(day)} ${monthNames[parseInt(month)-1]} ${year}`;
+
+    await resend.emails.send({
+      from: 'ScanTrack Pro <support@mail.scantrackpro.online>',
+      to: reportEmail,
+      subject: `📊 Daily Report - ${siteName} - ${formattedDate}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+          <div style="background: #4f46e5; padding: 24px; border-radius: 12px 12px 0 0; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 20px;">📊 ScanTrack Daily Report</h1>
+          </div>
+          <div style="background: white; border: 1px solid #e2e8f0; border-top: none; padding: 32px; border-radius: 0 0 12px 12px;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Site</td>
+                <td style="padding: 8px 0; font-weight: bold; text-align: right;">${siteName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Date</td>
+                <td style="padding: 8px 0; font-weight: bold; text-align: right;">${formattedDate}</td>
+              </tr>
+              <tr style="border-top: 1px solid #e2e8f0;">
+                <td style="padding: 12px 0; color: #64748b; font-size: 14px;">Total Files</td>
+                <td style="padding: 12px 0; font-weight: bold; font-size: 20px; text-align: right; color: #4f46e5;">${totalFiles.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Total Pages</td>
+                <td style="padding: 8px 0; font-weight: bold; font-size: 20px; text-align: right; color: #4f46e5;">${totalPages.toLocaleString()}</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      `
+    });
+
+    console.log(`[EMAIL-REPORT] Report sent for ${siteName} on ${date} to ${reportEmail}`);
+  } catch (err) {
+    console.error('[EMAIL-REPORT] Error sending email:', err);
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
@@ -550,7 +613,7 @@ async function startServer() {
 
       const resetUrl = `https://scantrackpro.online/reset-password?token=${token}`;
       await resend.emails.send({
-        from: 'ScanTrack Pro <noreply@scantrackpro.online>',
+        from: 'ScanTrack Pro <support@mail.scantrackpro.online>',
         to: user.email,
         subject: 'Password Reset Request',
         html: `
@@ -1054,6 +1117,7 @@ async function startServer() {
       }
       const timer = setTimeout(() => {
         sendWhatsAppReport(siteId, date).catch(console.error);
+        sendEmailReport(siteId, date).catch(console.error);
         pendingWhatsAppTimers.delete(timerKey);
       }, 60 * 1000); // 1 minute
       pendingWhatsAppTimers.set(timerKey, timer);

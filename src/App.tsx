@@ -959,27 +959,66 @@ export default function App() {
           <div className="flex items-center gap-2 sm:gap-4 ml-auto sm:ml-4 sm:pl-4 sm:border-l border-slate-200">
             {/* Site selector — admin always, non-admin only if 2+ sites */}
             {(currentUser?.role === 'admin' || (currentUser?.role !== 'admin' && sites.length > 1)) && (
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-2 bg-slate-50 border border-black/5 rounded-xl px-2 py-1.5 sm:px-3">
+              <div className="relative">
+                <button
+                  onClick={() => setIsMenuOpen(prev => prev === true ? false : 'site' as any)}
+                  className="flex items-center gap-2 bg-slate-50 border border-black/5 rounded-xl px-2 py-1.5 sm:px-3 hover:bg-slate-100 transition-all"
+                >
                   <div className="w-6 h-6 bg-indigo-600 rounded-lg flex items-center justify-center text-[10px] font-bold text-white shadow-sm shadow-indigo-100 shrink-0">
                     {sites.find(s => s.id === selectedSiteId)?.name.substring(0, 2).toUpperCase() || 'ST'}
                   </div>
-                  <div className="relative flex flex-col">
+                  <div className="flex flex-col items-start">
                     <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter leading-none mb-0.5">Active Site</span>
-                    <select 
-                      value={selectedSiteId || ''} 
-                      onChange={(e) => setSelectedSiteId(e.target.value)}
-                      className="appearance-none bg-transparent text-[11px] sm:text-xs font-bold text-slate-700 focus:outline-none cursor-pointer pr-4"
-                    >
-                      {sites.map(site => (
-                        <option key={site.id} value={site.id}>{site.name}</option>
-                      ))}
-                    </select>
-                    <div className="absolute right-0 bottom-0.5 pointer-events-none text-slate-400">
-                      <ChevronRight className="w-2.5 h-2.5 rotate-90" />
-                    </div>
+                    <span className="text-[11px] sm:text-xs font-bold text-slate-700">
+                      {sites.find(s => s.id === selectedSiteId)?.name || 'Select'}
+                    </span>
                   </div>
-                </div>
+                  <ChevronDown className="w-3 h-3 text-slate-400" />
+                </button>
+
+                <AnimatePresence>
+                  {(isMenuOpen as any) === 'site' && (
+                    <>
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setIsMenuOpen(false)}
+                        className="fixed inset-0 z-40"
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                        className="absolute top-full right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl border border-slate-200 z-50 overflow-hidden"
+                      >
+                        <div className="p-1.5">
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider px-3 py-2">Select Site</p>
+                          {sites.map(site => (
+                            <button
+                              key={site.id}
+                              onClick={() => { setSelectedSiteId(site.id); setIsMenuOpen(false); }}
+                              className={cn(
+                                "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
+                                String(site.id) === String(selectedSiteId)
+                                  ? "bg-indigo-50 text-indigo-600"
+                                  : "text-slate-600 hover:bg-slate-50"
+                              )}
+                            >
+                              <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                                {site.name.substring(0, 2).toUpperCase()}
+                              </div>
+                              {site.name}
+                              {String(site.id) === String(selectedSiteId) && (
+                                <Check className="w-3.5 h-3.5 ml-auto text-indigo-600" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
               </div>
             )}
             
