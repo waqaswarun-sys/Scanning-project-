@@ -259,7 +259,7 @@ async function sendEmailReport(siteId: string, date: string) {
     const formattedDate = `${parseInt(day)} ${monthNames[parseInt(month)-1]} ${year}`;
 
     await resend.emails.send({
-      from: 'ScanTrack Pro <support@mail.scantrackpro.online>',
+      from: 'ScanTrack Pro <noreply@scantrackpro.online>',
       to: reportEmail,
       subject: `📊 Daily Report - ${siteName} - ${formattedDate}`,
       html: `
@@ -613,7 +613,7 @@ async function startServer() {
 
       const resetUrl = `https://scantrackpro.online/reset-password?token=${token}`;
       await resend.emails.send({
-        from: 'ScanTrack Pro <support@mail.scantrackpro.online>',
+        from: 'ScanTrack Pro <noreply@scantrackpro.online>',
         to: user.email,
         subject: 'Password Reset Request',
         html: `
