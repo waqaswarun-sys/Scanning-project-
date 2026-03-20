@@ -7,6 +7,7 @@ import { getFirestore, FieldValue, FieldPath, Query } from "firebase-admin/fires
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 import { Resend } from "resend";
+import twilio from "twilio";
 
 // Simple in-memory cache (60 second TTL)
 const cache = new Map<string, { data: any; expires: number }>();
@@ -61,6 +62,9 @@ if (!getApps().length) {
 
 const db = getFirestore();
 const resend = new Resend(process.env.RESEND_API_KEY);
+const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+  ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+  : null;
 
 
 // Seed default admin if not exists
@@ -180,6 +184,54 @@ function getDeterministicSplit(totalExtra: number, employeeId: string, allActive
   }
 
   return results[employeeId] || 0;
+}
+
+// WhatsApp daily report sender
+// Stores pending timers to avoid duplicate messages
+const pendingWhatsAppTimers = new Map<string, NodeJS.Timeout>();
+
+async function sendWhatsAppReport(siteId: string, date: string) {
+  if (!twilioClient) {
+    console.log('[WHATSAPP] Twilio not configured, skipping...');
+    return;
+  }
+  const from = process.env.TWILIO_WHATSAPP_FROM;
+  const to = process.env.WHATSAPP_TO;
+  if (!from || !to) {
+    console.log('[WHATSAPP] Missing TWILIO_WHATSAPP_FROM or WHATSAPP_TO env vars');
+    return;
+  }
+
+  try {
+    const siteDoc = await db.collection('sites').doc(siteId).get();
+    if (!siteDoc.exists) return;
+    const siteName = siteDoc.data()?.name || siteId;
+
+    const scanningSnapshot = await db.collection('scanning_data')
+      .where('site_id', '==', siteId)
+      .where('date', '==', date)
+      .get();
+
+    const totalFiles = scanningSnapshot.docs.reduce((sum, doc) => sum + (doc.data().files || 0), 0);
+    const totalPages = scanningSnapshot.docs.reduce((sum, doc) => sum + (doc.data().pages || 0), 0);
+
+    // Format date nicely: 2026-03-17 → 17 Mar 2026
+    const [year, month, day] = date.split('-');
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const formattedDate = `${parseInt(day)} ${monthNames[parseInt(month)-1]} ${year}`;
+
+    const message = `📊 *ScanTrack Daily Report*\n\nSite: ${siteName}\n${formattedDate}\nTotal Files: ${totalFiles.toLocaleString()}\nTotal Pages: ${totalPages.toLocaleString()}`;
+
+    await twilioClient.messages.create({
+      from,
+      to,
+      body: message
+    });
+
+    console.log(`[WHATSAPP] Report sent for ${siteName} on ${date}`);
+  } catch (err) {
+    console.error('[WHATSAPP] Error sending message:', err);
+  }
 }
 
 async function startServer() {
@@ -993,6 +1045,19 @@ async function startServer() {
       clearCache(`stats-${siteId}`);
       clearCache('sites-summary');
       clearCache('operators-summary');
+
+      // Schedule WhatsApp report 1 minute after save
+      // Cancel previous timer for same site+date to avoid duplicates
+      const timerKey = `${siteId}_${date}`;
+      if (pendingWhatsAppTimers.has(timerKey)) {
+        clearTimeout(pendingWhatsAppTimers.get(timerKey)!);
+      }
+      const timer = setTimeout(() => {
+        sendWhatsAppReport(siteId, date).catch(console.error);
+        pendingWhatsAppTimers.delete(timerKey);
+      }, 60 * 1000); // 1 minute
+      pendingWhatsAppTimers.set(timerKey, timer);
+
       res.json({ success: true });
     } catch (err) {
       console.error('[SCANNING_DATA] Save error:', err);
