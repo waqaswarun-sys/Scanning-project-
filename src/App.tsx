@@ -110,6 +110,7 @@ export default function App() {
   const [confirmDeleteEmployeeId, setConfirmDeleteEmployeeId] = useState<string | number | null>(null);
   const [copiedDate, setCopiedDate] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSiteOpen, setIsSiteOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -737,7 +738,7 @@ export default function App() {
           {currentUser?.role === 'admin' ? (
             <div className="relative">
               <button 
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                onClick={() => { setIsMenuOpen(!isMenuOpen); setIsSiteOpen(false); }}
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all border shadow-sm",
                   isMenuOpen 
@@ -961,7 +962,7 @@ export default function App() {
             {(currentUser?.role === 'admin' || (currentUser?.role !== 'admin' && sites.length > 1)) && (
               <div className="relative">
                 <button
-                  onClick={() => setIsMenuOpen(prev => prev === true ? false : 'site' as any)}
+                  onClick={() => { setIsSiteOpen(!isSiteOpen); setIsMenuOpen(false); }}
                   className="flex items-center gap-2 bg-slate-50 border border-black/5 rounded-xl px-2 py-1.5 sm:px-3 hover:bg-slate-100 transition-all"
                 >
                   <div className="w-6 h-6 bg-indigo-600 rounded-lg flex items-center justify-center text-[10px] font-bold text-white shadow-sm shadow-indigo-100 shrink-0">
@@ -977,13 +978,13 @@ export default function App() {
                 </button>
 
                 <AnimatePresence>
-                  {(isMenuOpen as any) === 'site' && (
+                  {isSiteOpen && (
                     <>
                       <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        onClick={() => setIsMenuOpen(false)}
+                        onClick={() => setIsSiteOpen(false)}
                         className="fixed inset-0 z-40"
                       />
                       <motion.div
@@ -997,7 +998,7 @@ export default function App() {
                           {sites.map(site => (
                             <button
                               key={site.id}
-                              onClick={() => { setSelectedSiteId(site.id); setIsMenuOpen(false); }}
+                              onClick={() => { setSelectedSiteId(site.id); setIsSiteOpen(false); }}
                               className={cn(
                                 "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
                                 String(site.id) === String(selectedSiteId)
