@@ -7,7 +7,6 @@ import { getFirestore, FieldValue, FieldPath, Query } from "firebase-admin/fires
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 import { Resend } from "resend";
-import twilio from "twilio";
 
 // Simple in-memory cache (60 second TTL)
 const cache = new Map<string, { data: any; expires: number }>();
@@ -42,7 +41,7 @@ declare module 'express-session' {
 import path from "path";
 import fs from "fs";
 import * as XLSX from "xlsx";
-import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSunday } from "date-fns";
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSunday, isLastDayOfMonth, addDays, subMonths } from "date-fns";
 import bcrypt from "bcryptjs";
 import { Site, Employee, ScanningData, Stats } from './src/types.ts';
 
@@ -56,15 +55,12 @@ if (!getApps().length) {
   }
   initializeApp({
     credential: cert(serviceAccount),
-    projectId: firebaseConfig.projectId,
+    projectId: firebaseConfig.project_id,
   });
 }
 
 const db = getFirestore();
 const resend = new Resend(process.env.RESEND_API_KEY);
-const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
-  ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
-  : null;
 
 
 // Seed default admin if not exists
@@ -186,61 +182,15 @@ function getDeterministicSplit(totalExtra: number, employeeId: string, allActive
   return results[employeeId] || 0;
 }
 
-// WhatsApp daily report sender
-// Stores pending timers to avoid duplicate messages
-const pendingWhatsAppTimers = new Map<string, NodeJS.Timeout>();
-
-async function sendWhatsAppReport(siteId: string, date: string) {
-  if (!twilioClient) {
-    console.log('[WHATSAPP] Twilio not configured, skipping...');
-    return;
-  }
-  const from = process.env.TWILIO_WHATSAPP_FROM;
-  const to = process.env.WHATSAPP_TO;
-  if (!from || !to) {
-    console.log('[WHATSAPP] Missing TWILIO_WHATSAPP_FROM or WHATSAPP_TO env vars');
-    return;
-  }
-
-  try {
-    const siteDoc = await db.collection('sites').doc(siteId).get();
-    if (!siteDoc.exists) return;
-    const siteName = siteDoc.data()?.name || siteId;
-
-    const scanningSnapshot = await db.collection('scanning_data')
-      .where('site_id', '==', siteId)
-      .where('date', '==', date)
-      .get();
-
-    const totalFiles = scanningSnapshot.docs.reduce((sum, doc) => sum + (doc.data().files || 0), 0);
-    const totalPages = scanningSnapshot.docs.reduce((sum, doc) => sum + (doc.data().pages || 0), 0);
-
-    // Format date nicely: 2026-03-17 → 17 Mar 2026
-    const [year, month, day] = date.split('-');
-    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const formattedDate = `${parseInt(day)} ${monthNames[parseInt(month)-1]} ${year}`;
-
-    const message = `📊 *ScanTrack Daily Report*\n\nSite: ${siteName}\n${formattedDate}\nTotal Files: ${totalFiles.toLocaleString()}\nTotal Pages: ${totalPages.toLocaleString()}`;
-
-    await twilioClient.messages.create({
-      from,
-      to,
-      body: message
-    });
-
-    console.log(`[WHATSAPP] Report sent for ${siteName} on ${date}`);
-  } catch (err) {
-    console.error('[WHATSAPP] Error sending message:', err);
-  }
-}
-
 // Email daily report sender
+// Stores pending timers to avoid duplicate messages
+const pendingReportTimers = new Map<string, NodeJS.Timeout>();
+
 async function sendEmailReport(siteId: string, date: string) {
-  const reportEmail = process.env.REPORT_EMAIL;
-  if (!reportEmail) {
-    console.log('[EMAIL-REPORT] REPORT_EMAIL not set, skipping...');
-    return;
-  }
+  const adminEmail = process.env.REPORT_EMAIL;
+  const managerEmail = process.env.MANAGER_EMAIL;
+  let totalFiles = 0;
+  let totalPages = 0;
   try {
     const siteDoc = await db.collection('sites').doc(siteId).get();
     if (!siteDoc.exists) return;
@@ -251,51 +201,339 @@ async function sendEmailReport(siteId: string, date: string) {
       .where('date', '==', date)
       .get();
 
-    const totalFiles = scanningSnapshot.docs.reduce((sum, doc) => sum + (doc.data().files || 0), 0);
-    const totalPages = scanningSnapshot.docs.reduce((sum, doc) => sum + (doc.data().pages || 0), 0);
+    const extraSnapshot = await db.collection('daily_extra_pages')
+      .where('site_id', '==', siteId)
+      .where('date', '==', date)
+      .get();
+    
+    const extraPages = extraSnapshot.empty ? 0 : (extraSnapshot.docs[0].data().extra_pages || 0);
+
+    const employeesSnapshot = await db.collection('employees').where('site_id', '==', siteId).get();
+    const employeesMap = new Map();
+    employeesSnapshot.docs.forEach(doc => employeesMap.set(doc.id, doc.data().name));
+
+    const usersSnapshot = await db.collection('users').where('role', '==', 'user').get();
+    const operatorUsers = usersSnapshot.docs.filter(doc => doc.data().employee_id && doc.data().email);
 
     const [year, month, day] = date.split('-');
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const formattedDate = `${parseInt(day)} ${monthNames[parseInt(month)-1]} ${year}`;
 
-    await resend.emails.send({
-      from: 'ScanTrack Pro <noreply@scantrackpro.online>',
-      to: reportEmail,
-      subject: `📊 Daily Report - ${siteName} - ${formattedDate}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
-          <div style="background: #4f46e5; padding: 24px; border-radius: 12px 12px 0 0; text-align: center;">
-            <h1 style="color: white; margin: 0; font-size: 20px;">📊 ScanTrack Daily Report</h1>
-          </div>
-          <div style="background: white; border: 1px solid #e2e8f0; border-top: none; padding: 32px; border-radius: 0 0 12px 12px;">
-            <table style="width: 100%; border-collapse: collapse;">
-              <tr>
-                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Site</td>
-                <td style="padding: 8px 0; font-weight: bold; text-align: right;">${siteName}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Date</td>
-                <td style="padding: 8px 0; font-weight: bold; text-align: right;">${formattedDate}</td>
-              </tr>
-              <tr style="border-top: 1px solid #e2e8f0;">
-                <td style="padding: 12px 0; color: #64748b; font-size: 14px;">Total Files</td>
-                <td style="padding: 12px 0; font-weight: bold; font-size: 20px; text-align: right; color: #4f46e5;">${totalFiles.toLocaleString()}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Total Pages</td>
-                <td style="padding: 8px 0; font-weight: bold; font-size: 20px; text-align: right; color: #4f46e5;">${totalPages.toLocaleString()}</td>
-              </tr>
-            </table>
-          </div>
-        </div>
-      `
-    });
+    // 1. Send Individual Reports to Operators
+    for (const userDoc of operatorUsers) {
+      const userData = userDoc.data();
+      const empData = scanningSnapshot.docs.find(d => d.data().employee_id === userData.employee_id);
+      
+      if (empData) {
+        const files = empData.data().files || 0;
+        const pages = empData.data().pages || 0;
+        
+        // Fetch employee rate for Rs calculation
+        const empDoc = await db.collection('employees').doc(userData.employee_id).get();
+        const rate = empDoc.data()?.rate_per_page || 0.30;
+        const amount = pages * rate;
 
-    console.log(`[EMAIL-REPORT] Report sent for ${siteName} on ${date} to ${reportEmail}`);
+        await resend.emails.send({
+          from: 'ScanTrack Pro <noreply@scantrackpro.online>',
+          to: userData.email,
+          subject: `📊 Your Daily Report - ${formattedDate}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+              <div style="background: #4f46e5; padding: 24px; border-radius: 12px 12px 0 0; text-align: center;">
+                <h1 style="color: white; margin: 0; font-size: 20px;">📊 Daily Work Report</h1>
+              </div>
+              <div style="background: white; border: 1px solid #e2e8f0; border-top: none; padding: 32px; border-radius: 0 0 12px 12px;">
+                <p>Hi <strong>${userData.username}</strong>, here is your work summary for today:</p>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+                  <tr>
+                    <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Date</td>
+                    <td style="padding: 8px 0; font-weight: bold; text-align: right;">${formattedDate}</td>
+                  </tr>
+                  <tr style="border-top: 1px solid #e2e8f0;">
+                    <td style="padding: 12px 0; color: #64748b; font-size: 14px;">Files Scanned</td>
+                    <td style="padding: 12px 0; font-weight: bold; font-size: 18px; text-align: right; color: #4f46e5;">${files.toLocaleString()}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Pages Scanned</td>
+                    <td style="padding: 8px 0; font-weight: bold; font-size: 18px; text-align: right; color: #4f46e5;">${pages.toLocaleString()}</td>
+                  </tr>
+                  <tr style="border-top: 2px solid #f1f5f9;">
+                    <td style="padding: 12px 0; color: #1e293b; font-weight: bold; font-size: 14px;">Total Amount</td>
+                    <td style="padding: 12px 0; font-weight: bold; font-size: 20px; text-align: right; color: #10b981;">Rs ${amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+          `
+        });
+      }
+    }
+
+    // 2. Send Summary Report to Admin
+    if (adminEmail) {
+      let operatorRows = '';
+
+      scanningSnapshot.docs.forEach(doc => {
+        const d = doc.data();
+        const name = employeesMap.get(d.employee_id) || 'Unknown';
+        operatorRows += `
+          <tr>
+            <td style="padding: 8px; border-bottom: 1px solid #f1f5f9;">${name}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #f1f5f9; text-align: right;">${(d.files || 0).toLocaleString()}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #f1f5f9; text-align: right;">${(d.pages || 0).toLocaleString()}</td>
+          </tr>
+        `;
+        totalFiles += (d.files || 0);
+        totalPages += (d.pages || 0);
+      });
+
+      await resend.emails.send({
+        from: 'ScanTrack Pro <noreply@scantrackpro.online>',
+        to: adminEmail,
+        subject: `📊 Admin Daily Report - ${siteName} - ${formattedDate}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+            <div style="background: #1e293b; padding: 24px; border-radius: 12px 12px 0 0; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 20px;">📊 Site Summary: ${siteName}</h1>
+              <p style="color: #94a3b8; margin: 4px 0 0 0;">${formattedDate}</p>
+            </div>
+            <div style="background: white; border: 1px solid #e2e8f0; border-top: none; padding: 24px; border-radius: 0 0 12px 12px;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                  <tr style="background: #f8fafc;">
+                    <th style="padding: 10px; text-align: left; font-size: 12px; color: #64748b;">OPERATOR</th>
+                    <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">FILES</th>
+                    <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">PAGES</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${operatorRows || '<tr><td colspan="3" style="padding: 20px; text-align: center; color: #94a3b8;">No data entered today</td></tr>'}
+                </tbody>
+                <tfoot>
+                  <tr style="font-weight: bold; background: #f1f5f9;">
+                    <td style="padding: 10px;">Sub-Total</td>
+                    <td style="padding: 10px; text-align: right;">${totalFiles.toLocaleString()}</td>
+                    <td style="padding: 10px; text-align: right;">${totalPages.toLocaleString()}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px; color: #64748b;">Extra Pages</td>
+                    <td></td>
+                    <td style="padding: 10px; text-align: right; color: #4f46e5;">+ ${extraPages.toLocaleString()}</td>
+                  </tr>
+                  <tr style="font-weight: bold; background: #4f46e5; color: white;">
+                    <td style="padding: 12px;">GRAND TOTAL</td>
+                    <td style="padding: 12px; text-align: right;">${totalFiles.toLocaleString()}</td>
+                    <td style="padding: 12px; text-align: right;">${(totalPages + extraPages).toLocaleString()}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        `
+      });
+    }
+
+    // 3. Send Summary Report to Manager
+    if (managerEmail) {
+      const grandTotalFiles = totalFiles;
+      const grandTotalPages = totalPages + extraPages;
+
+      await resend.emails.send({
+        from: 'ScanTrack Pro <noreply@scantrackpro.online>',
+        to: managerEmail,
+        subject: `📋 Manager Daily Report - ${siteName} - ${formattedDate}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
+            <h2 style="color: #1e293b; margin-top: 0; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px;">📋 Manager Daily Report</h2>
+            
+            <div style="padding: 16px 0;">
+              <p style="margin: 8px 0; color: #64748b;">Site: <strong style="color: #1e293b;">${siteName}</strong></p>
+              <p style="margin: 8px 0; color: #64748b;">Date: <strong style="color: #1e293b;">${formattedDate}</strong></p>
+              
+              <div style="margin-top: 16px; padding: 16px; background: #4f46e5; color: white; border-radius: 8px; text-align: center;">
+                <p style="margin: 0; font-size: 12px; opacity: 0.8; text-transform: uppercase;">Grand Total</p>
+                <div style="display: flex; justify-content: space-around; margin-top: 8px;">
+                  <div>
+                    <p style="margin: 0; font-size: 20px; font-weight: bold;">${grandTotalFiles.toLocaleString()}</p>
+                    <p style="margin: 0; font-size: 10px; opacity: 0.8;">FILES</p>
+                  </div>
+                  <div>
+                    <p style="margin: 0; font-size: 20px; font-weight: bold;">${grandTotalPages.toLocaleString()}</p>
+                    <p style="margin: 0; font-size: 10px; opacity: 0.8;">PAGES</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div style="margin-top: 20px; padding: 16px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px;">
+              <p style="margin: 0 0 8px 0; font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">👇 Copy-Ready Text:</p>
+              <div style="font-family: 'Courier New', monospace; font-size: 15px; color: #1e293b; white-space: pre-wrap; line-height: 1.5;">${formattedDate}
+Total Files ${grandTotalFiles.toLocaleString()}
+Total Pages ${grandTotalPages.toLocaleString()}</div>
+            </div>
+            
+            <p style="margin-top: 16px; font-size: 11px; color: #94a3b8; text-align: center;">Sent via ScanTrack Pro Automated System</p>
+          </div>
+        `
+      });
+    }
+
+    console.log(`[EMAIL-REPORT] Reports sent for ${siteName} on ${date}`);
+
+    // Check if it's the last day of the month to trigger monthly reports
+    const parsedDate = parseISO(date);
+    if (isLastDayOfMonth(parsedDate)) {
+      console.log(`[MONTHLY-REPORT] Last day of month detected (${date}), triggering monthly reports...`);
+      await sendMonthlyReports(siteId, format(parsedDate, 'yyyy-MM'));
+    }
   } catch (err) {
-    console.error('[EMAIL-REPORT] Error sending email:', err);
+    console.error('[EMAIL-REPORT] Error sending emails:', err);
   }
 }
+
+async function sendMonthlyReports(siteId: string, monthStr: string) {
+  try {
+    const siteDoc = await db.collection('sites').doc(siteId).get();
+    if (!siteDoc.exists) return;
+    const siteName = siteDoc.data()?.name || siteId;
+
+    const employeesSnapshot = await db.collection('employees').where('site_id', '==', siteId).get();
+    const employees = employeesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+
+    const usersSnapshot = await db.collection('users').where('role', '==', 'user').get();
+    const operatorUsers = usersSnapshot.docs.filter(doc => doc.data().employee_id && doc.data().email);
+
+    const startDate = startOfMonth(parseISO(monthStr + "-01"));
+    const endDate = endOfMonth(startDate);
+    const days = eachDayOfInterval({ start: startDate, end: endDate });
+
+    const scanningSnapshot = await db.collection('scanning_data')
+      .where('site_id', '==', siteId)
+      .where('date', '>=', monthStr + "-01")
+      .where('date', '<=', monthStr + "-31")
+      .get();
+    const scanningData = scanningSnapshot.docs.map(doc => doc.data());
+
+    const monthName = format(startDate, 'MMMM yyyy');
+
+    for (const userDoc of operatorUsers) {
+      const userData = userDoc.data();
+      const employee = employees.find(e => e.id === userData.employee_id);
+      if (!employee) continue;
+
+      const rate = employee.rate_per_page || 0.30;
+      let totalFiles = 0;
+      let totalPages = 0;
+      let totalEarnings = 0;
+      let tableRows = '';
+
+      days.forEach(day => {
+        const dateStr = format(day, 'yyyy-MM-dd');
+        const dayData = scanningData.find(d => d.employee_id === employee.id && d.date === dateStr);
+        
+        const files = dayData?.files || 0;
+        const pages = dayData?.pages || 0;
+        const earnings = pages * rate;
+
+        totalFiles += files;
+        totalPages += pages;
+        totalEarnings += earnings;
+
+        if (files > 0 || pages > 0 || isSunday(day)) {
+          tableRows += `
+            <tr>
+              <td style="padding: 8px; border-bottom: 1px solid #f1f5f9; font-size: 13px;">${format(day, 'dd MMM')} ${isSunday(day) ? '(Sun)' : ''}</td>
+              <td style="padding: 8px; border-bottom: 1px solid #f1f5f9; text-align: right;">${files.toLocaleString()}</td>
+              <td style="padding: 8px; border-bottom: 1px solid #f1f5f9; text-align: right;">${pages.toLocaleString()}</td>
+              <td style="padding: 8px; border-bottom: 1px solid #f1f5f9; text-align: right;">Rs. ${earnings.toFixed(2)}</td>
+            </tr>
+          `;
+        }
+      });
+
+      if (totalPages > 0) {
+        await resend.emails.send({
+          from: 'ScanTrack Pro <noreply@scantrackpro.online>',
+          to: userData.email,
+          subject: `📜 Monthly Summary - ${monthName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+              <div style="background: #4f46e5; padding: 24px; border-radius: 12px 12px 0 0; text-align: center;">
+                <h1 style="color: white; margin: 0; font-size: 20px;">📜 Monthly Work Summary</h1>
+                <p style="color: #e0e7ff; margin: 4px 0 0 0;">${monthName} | ${employee.name}</p>
+              </div>
+              <div style="background: white; border: 1px solid #e2e8f0; border-top: none; padding: 24px; border-radius: 0 0 12px 12px;">
+                <table style="width: 100%; border-collapse: collapse;">
+                  <thead>
+                    <tr style="background: #f8fafc;">
+                      <th style="padding: 10px; text-align: left; font-size: 12px; color: #64748b;">DATE</th>
+                      <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">FILES</th>
+                      <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">PAGES</th>
+                      <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">EARNINGS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${tableRows}
+                  </tbody>
+                </table>
+                <div style="margin-top: 24px; padding: 20px; background: #f8fafc; border-radius: 12px;">
+                  <h3 style="margin: 0 0 16px 0; color: #1e293b; font-size: 16px;">Final Summary</h3>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span style="color: #64748b;">Total Files</span>
+                    <span style="font-weight: bold;">${totalFiles.toLocaleString()}</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span style="color: #64748b;">Total Pages</span>
+                    <span style="font-weight: bold;">${totalPages.toLocaleString()}</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0;">
+                    <span style="color: #1e293b; font-weight: bold;">TOTAL AMOUNT</span>
+                    <span style="color: #4f46e5; font-weight: bold; font-size: 20px;">Rs. ${totalEarnings.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `
+        });
+        console.log(`[MONTHLY-REPORT] Sent to ${userData.username} (${userData.email})`);
+      }
+    }
+    
+    // Mark this month as reported for this site to avoid duplicates in backup scheduler
+    await db.collection('monthly_report_logs').doc(`${siteId}_${monthStr}`).set({
+      sent_at: FieldValue.serverTimestamp(),
+      site_id: siteId,
+      month: monthStr
+    });
+
+  } catch (err) {
+    console.error('[MONTHLY-REPORT] Error:', err);
+  }
+}
+
+// Backup scheduler to catch missed monthly reports (runs every hour)
+setInterval(async () => {
+  const now = new Date();
+  // Check if it's the 1st of the month and between 9:00 AM and 10:00 AM
+  if (now.getDate() === 1 && now.getHours() === 9) {
+    const lastMonth = subMonths(now, 1);
+    const monthStr = format(lastMonth, 'yyyy-MM');
+    console.log(`[BACKUP-SCHEDULER] Checking for missed reports for ${monthStr}...`);
+    
+    try {
+      const sitesSnapshot = await db.collection('sites').get();
+      for (const siteDoc of sitesSnapshot.docs) {
+        const logDoc = await db.collection('monthly_report_logs').doc(`${siteDoc.id}_${monthStr}`).get();
+        if (!logDoc.exists) {
+          console.log(`[BACKUP-SCHEDULER] Report missing for site ${siteDoc.id}, sending now...`);
+          await sendMonthlyReports(siteDoc.id, monthStr);
+        }
+      }
+    } catch (err) {
+      console.error('[BACKUP-SCHEDULER] Error:', err);
+    }
+  }
+}, 60 * 60 * 1000); // Every hour
 
 async function startServer() {
   const app = express();
@@ -1109,18 +1347,17 @@ async function startServer() {
       clearCache('sites-summary');
       clearCache('operators-summary');
 
-      // Schedule WhatsApp report 1 minute after save
+      // Schedule Email report 1 minute after save
       // Cancel previous timer for same site+date to avoid duplicates
       const timerKey = `${siteId}_${date}`;
-      if (pendingWhatsAppTimers.has(timerKey)) {
-        clearTimeout(pendingWhatsAppTimers.get(timerKey)!);
+      if (pendingReportTimers.has(timerKey)) {
+        clearTimeout(pendingReportTimers.get(timerKey)!);
       }
       const timer = setTimeout(() => {
-        sendWhatsAppReport(siteId, date).catch(console.error);
         sendEmailReport(siteId, date).catch(console.error);
-        pendingWhatsAppTimers.delete(timerKey);
+        pendingReportTimers.delete(timerKey);
       }, 60 * 1000); // 1 minute
-      pendingWhatsAppTimers.set(timerKey, timer);
+      pendingReportTimers.set(timerKey, timer);
 
       res.json({ success: true });
     } catch (err) {
