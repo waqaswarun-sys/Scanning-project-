@@ -189,6 +189,7 @@ const pendingReportTimers = new Map<string, NodeJS.Timeout>();
 async function sendEmailReport(siteId: string, date: string) {
   const adminEmail = process.env.REPORT_EMAIL;
   const managerEmail = process.env.MANAGER_EMAIL;
+  console.log(`[EMAIL-REPORT] Starting report for site ${siteId} on ${date}. Admin: ${adminEmail || 'not set'}, Manager: ${managerEmail || 'not set'}`);
   let totalFiles = 0;
   let totalPages = 0;
   try {
@@ -338,44 +339,52 @@ async function sendEmailReport(siteId: string, date: string) {
       const grandTotalFiles = totalFiles;
       const grandTotalPages = totalPages + extraPages;
 
-      await resend.emails.send({
-        from: 'ScanTrack Pro <noreply@scantrackpro.online>',
-        to: managerEmail,
-        subject: `📋 Manager Daily Report - ${siteName} - ${formattedDate}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
-            <h2 style="color: #1e293b; margin-top: 0; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px;">📋 Manager Daily Report</h2>
-            
-            <div style="padding: 16px 0;">
-              <p style="margin: 8px 0; color: #64748b;">Site: <strong style="color: #1e293b;">${siteName}</strong></p>
-              <p style="margin: 8px 0; color: #64748b;">Date: <strong style="color: #1e293b;">${formattedDate}</strong></p>
+      console.log(`[EMAIL-REPORT] Sending manager report to ${managerEmail}...`);
+      try {
+        await resend.emails.send({
+          from: 'ScanTrack Pro <noreply@scantrackpro.online>',
+          to: managerEmail,
+          subject: `📋 Manager Daily Report - ${siteName} - ${formattedDate}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
+              <h2 style="color: #1e293b; margin-top: 0; font-size: 18px; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px;">📋 Manager Daily Report</h2>
               
-              <div style="margin-top: 16px; padding: 16px; background: #4f46e5; color: white; border-radius: 8px; text-align: center;">
-                <p style="margin: 0; font-size: 12px; opacity: 0.8; text-transform: uppercase;">Grand Total</p>
-                <div style="display: flex; justify-content: space-around; margin-top: 8px;">
-                  <div>
-                    <p style="margin: 0; font-size: 20px; font-weight: bold;">${grandTotalFiles.toLocaleString()}</p>
-                    <p style="margin: 0; font-size: 10px; opacity: 0.8;">FILES</p>
-                  </div>
-                  <div>
-                    <p style="margin: 0; font-size: 20px; font-weight: bold;">${grandTotalPages.toLocaleString()}</p>
-                    <p style="margin: 0; font-size: 10px; opacity: 0.8;">PAGES</p>
+              <div style="padding: 16px 0;">
+                <p style="margin: 8px 0; color: #64748b;">Site: <strong style="color: #1e293b;">${siteName}</strong></p>
+                <p style="margin: 8px 0; color: #64748b;">Date: <strong style="color: #1e293b;">${formattedDate}</strong></p>
+                
+                <div style="margin-top: 16px; padding: 16px; background: #4f46e5; color: white; border-radius: 8px; text-align: center;">
+                  <p style="margin: 0; font-size: 12px; opacity: 0.8; text-transform: uppercase;">Grand Total</p>
+                  <div style="display: flex; justify-content: space-around; margin-top: 8px;">
+                    <div>
+                      <p style="margin: 0; font-size: 20px; font-weight: bold;">${grandTotalFiles.toLocaleString()}</p>
+                      <p style="margin: 0; font-size: 10px; opacity: 0.8;">FILES</p>
+                    </div>
+                    <div>
+                      <p style="margin: 0; font-size: 20px; font-weight: bold;">${grandTotalPages.toLocaleString()}</p>
+                      <p style="margin: 0; font-size: 10px; opacity: 0.8;">PAGES</p>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-            
-            <div style="margin-top: 20px; padding: 16px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px;">
-              <p style="margin: 0 0 8px 0; font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">👇 Copy-Ready Text:</p>
-              <div style="font-family: 'Courier New', monospace; font-size: 15px; color: #1e293b; white-space: pre-wrap; line-height: 1.5;">${formattedDate}
+              
+              <div style="margin-top: 20px; padding: 16px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px;">
+                <p style="margin: 0 0 8px 0; font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">👇 Copy-Ready Text:</p>
+                <div style="font-family: 'Courier New', monospace; font-size: 15px; color: #1e293b; white-space: pre-wrap; line-height: 1.5;">${formattedDate}
 Total Files ${grandTotalFiles.toLocaleString()}
 Total Pages ${grandTotalPages.toLocaleString()}</div>
+              </div>
+              
+              <p style="margin-top: 16px; font-size: 11px; color: #94a3b8; text-align: center;">Sent via ScanTrack Pro Automated System</p>
             </div>
-            
-            <p style="margin-top: 16px; font-size: 11px; color: #94a3b8; text-align: center;">Sent via ScanTrack Pro Automated System</p>
-          </div>
-        `
-      });
+          `
+        });
+        console.log(`[EMAIL-REPORT] Manager report sent successfully to ${managerEmail}`);
+      } catch (err) {
+        console.error(`[EMAIL-REPORT] Failed to send manager report to ${managerEmail}:`, err);
+      }
+    } else {
+      console.log(`[EMAIL-REPORT] Manager email not sent because MANAGER_EMAIL is not set.`);
     }
 
     console.log(`[EMAIL-REPORT] Reports sent for ${siteName} on ${date}`);
