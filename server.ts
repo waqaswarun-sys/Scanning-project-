@@ -353,26 +353,27 @@ async function sendEmailReport(siteId: string, date: string) {
                 <p style="margin: 8px 0; color: #64748b;">Site: <strong style="color: #1e293b;">${siteName}</strong></p>
                 <p style="margin: 8px 0; color: #64748b;">Date: <strong style="color: #1e293b;">${formattedDate}</strong></p>
                 
-                <div style="margin-top: 16px; padding: 16px; background: #4f46e5; color: white; border-radius: 8px; text-align: center;">
-                  <p style="margin: 0; font-size: 12px; opacity: 0.8; text-transform: uppercase;">Grand Total</p>
-                  <div style="display: flex; justify-content: space-around; margin-top: 8px;">
-                    <div>
-                      <p style="margin: 0; font-size: 20px; font-weight: bold;">${grandTotalFiles.toLocaleString()}</p>
-                      <p style="margin: 0; font-size: 10px; opacity: 0.8;">FILES</p>
-                    </div>
-                    <div>
-                      <p style="margin: 0; font-size: 20px; font-weight: bold;">${grandTotalPages.toLocaleString()}</p>
-                      <p style="margin: 0; font-size: 10px; opacity: 0.8;">PAGES</p>
-                    </div>
-                  </div>
-                </div>
+                <table style="width: 100%; margin-top: 16px; background: #4f46e5; color: white; border-radius: 8px; padding: 16px; border-collapse: collapse;">
+                  <tr>
+                    <td colspan="2" style="text-align: center; font-size: 11px; opacity: 0.8; text-transform: uppercase; padding-bottom: 12px; letter-spacing: 1px;">Grand Total Summary</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.2); font-size: 14px;">FILES</td>
+                    <td style="padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.2); text-align: right; font-size: 20px; font-weight: bold;">${grandTotalFiles.toLocaleString()}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 4px 0; font-size: 14px;">PAGES</td>
+                    <td style="padding: 4px 0; text-align: right; font-size: 20px; font-weight: bold;">${grandTotalPages.toLocaleString()}</td>
+                  </tr>
+                </table>
               </div>
               
-              <div style="margin-top: 20px; padding: 16px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px;">
-                <p style="margin: 0 0 8px 0; font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">👇 Copy-Ready Text:</p>
-                <div style="font-family: 'Courier New', monospace; font-size: 15px; color: #1e293b; white-space: pre-wrap; line-height: 1.5;">${formattedDate}
+              <div style="margin-top: 20px; padding: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                <p style="margin: 0 0 12px 0; font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">📋 Copy-Ready Summary:</p>
+                <div style="background: white; border: 2px solid #4f46e5; padding: 16px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 16px; color: #1e293b; white-space: pre-wrap; line-height: 1.6; -webkit-user-select: all; user-select: all; cursor: pointer;" title="Click to select all">${formattedDate}
 Total Files ${grandTotalFiles.toLocaleString()}
 Total Pages ${grandTotalPages.toLocaleString()}</div>
+                <p style="margin: 8px 0 0 0; font-size: 11px; color: #4f46e5; font-weight: bold;">✨ Tip: Just tap or click the box above to select all text instantly!</p>
               </div>
               
               <p style="margin-top: 16px; font-size: 11px; color: #94a3b8; text-align: center;">Sent via ScanTrack Pro Automated System</p>
