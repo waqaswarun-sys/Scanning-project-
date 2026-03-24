@@ -742,11 +742,123 @@ export default function App() {
             <Layers className="w-6 h-6 text-white" />
           </div>
           <h1 className="text-xl font-bold tracking-tight hidden lg:block">ScanTrack Pro</h1>
+
+          {/* Desktop Navigation Links */}
+          <div className="hidden lg:flex items-center gap-1 ml-6 border-l border-slate-100 pl-6">
+            {hasPermission('main-view') && (
+              <button 
+                onClick={() => setView('main-view')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                  view === 'main-view' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <LayoutDashboard className="w-3.5 h-3.5" />
+                Dashboard
+              </button>
+            )}
+            {hasPermission('personal-records') && (
+              <button 
+                onClick={() => setView('personal-records')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                  view === 'personal-records' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <TrendingUp className="w-3.5 h-3.5" />
+                Records
+              </button>
+            )}
+            {hasPermission('admin-data-entry') && (
+              <button 
+                onClick={() => setView('admin-data-entry')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                  view === 'admin-data-entry' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Entry
+              </button>
+            )}
+            {hasPermission('admin-reports') && (
+              <button 
+                onClick={() => setView('admin-reports')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                  view === 'admin-reports' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Downloads
+              </button>
+            )}
+            {hasPermission('admin-sites') && (
+              <button 
+                onClick={() => setView('admin-sites')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                  view === 'admin-sites' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                Sites
+              </button>
+            )}
+            {hasPermission('admin-operators') && (
+              <button 
+                onClick={() => setView('admin-operators')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                  view === 'admin-operators' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <Users className="w-3.5 h-3.5" />
+                Operators
+              </button>
+            )}
+            {hasPermission('operator-summary') && (
+              <button 
+                onClick={() => setView('operator-summary')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                  view === 'operator-summary' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                Summary
+              </button>
+            )}
+            {currentUser?.role === 'admin' && (
+              <button 
+                onClick={() => setView('user-controls')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                  view === 'user-controls' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <UserCog className="w-3.5 h-3.5" />
+                Users
+              </button>
+            )}
+            {hasPermission('admin-management') && (
+              <button 
+                onClick={() => setView('admin-management')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                  view === 'admin-management' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <Settings className="w-3.5 h-3.5" />
+                Settings
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-4">
           {currentUser?.role === 'admin' ? (
-            <div className="relative">
+            <div className="relative lg:hidden">
               <button 
                 onClick={() => { setIsMenuOpen(!isMenuOpen); setIsSiteOpen(false); }}
                 className={cn(
@@ -913,7 +1025,7 @@ export default function App() {
               </AnimatePresence>
             </div>
           ) : (
-            <div className="relative">
+            <div className="relative lg:hidden">
               <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                 className={cn(
