@@ -6,7 +6,9 @@
       "type": "object",
       "properties": {
         "name": { "type": "string" },
-        "target_files": { "type": "integer" }
+        "target_files": { "type": "integer" },
+        "rate": { "type": "number" },
+        "unit": { "type": "string" }
       },
       "required": ["name"]
     },

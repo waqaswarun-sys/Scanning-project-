@@ -104,6 +104,8 @@ export default function App() {
   const [showManagement, setShowManagement] = useState(false);
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteTarget, setNewSiteTarget] = useState('');
+  const [newSiteRate, setNewSiteRate] = useState('0.3');
+  const [newSiteUnit, setNewSiteUnit] = useState('Files');
   const [newEmployeeName, setNewEmployeeName] = useState('');
   const [updateTargetValue, setUpdateTargetValue] = useState('');
   const [confirmDeleteSite, setConfirmDeleteSite] = useState<string | number | null>(null);
@@ -377,7 +379,8 @@ export default function App() {
 
   const handleCopy = (date: Date, files: number, pages: number) => {
     const dateStr = format(date, 'dd MMM yyyy');
-    const text = `${dateStr}\nTotal Files: ${files}\nTotal Pages: ${pages}`;
+    const unit = stats?.overall.unit || 'Files';
+    const text = `${dateStr}\nTotal ${unit}: ${files}\nTotal Pages: ${pages}`;
     navigator.clipboard.writeText(text);
     setCopiedDate(format(date, 'yyyy-MM-dd'));
     setTimeout(() => setCopiedDate(null), 2000);
@@ -532,11 +535,18 @@ export default function App() {
       const res = await apiFetch('/api/sites', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newSiteName, target_files: parseInt(newSiteTarget) || 0 })
+        body: JSON.stringify({ 
+          name: newSiteName, 
+          target_files: parseInt(newSiteTarget) || 0,
+          rate: parseFloat(newSiteRate) || 0.3,
+          unit: newSiteUnit || 'Files'
+        })
       });
       if (res.ok) {
         setNewSiteName('');
         setNewSiteTarget('');
+        setNewSiteRate('0.3');
+        setNewSiteUnit('Files');
         fetchSites();
         fetchSitesSummary();
       }
@@ -1054,7 +1064,7 @@ export default function App() {
               {/* Summary Cards */}
               <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
                 <StatCard 
-                  title="Scanned Files" 
+                  title={`Scanned ${stats?.overall.unit || 'Files'}`} 
                   value={stats?.overall.total_files?.toLocaleString() || '0'} 
                   icon={FileText} 
                   colorClass="bg-blue-500"
@@ -1068,7 +1078,7 @@ export default function App() {
                   loading={!stats || stats.mode !== 'main'}
                 />
                 <StatCard 
-                  title="Target Files" 
+                  title={`Target ${stats?.overall.unit || 'Files'}`} 
                   value={stats?.overall.target_files?.toLocaleString() || '0'} 
                   icon={TrendingUp} 
                   colorClass="bg-emerald-500"
@@ -1095,7 +1105,7 @@ export default function App() {
                       <thead>
                         <tr className="text-slate-400 font-medium border-b border-black/5">
                           <th className="text-left pb-3">Month</th>
-                          <th className="text-right pb-3">Files</th>
+                          <th className="text-right pb-3">{stats?.overall.unit || 'Files'}</th>
                           <th className="text-right pb-3">Pages</th>
                         </tr>
                       </thead>
@@ -1143,7 +1153,7 @@ export default function App() {
                       <thead>
                         <tr className="text-slate-400 font-medium border-b border-black/5">
                           <th className="text-left pb-3">Date</th>
-                          <th className="text-right pb-3">Files</th>
+                          <th className="text-right pb-3">{stats?.overall.unit || 'Files'}</th>
                           <th className="text-right pb-3">Pages</th>
                           <th className="w-10 pb-3"></th>
                         </tr>
@@ -1284,7 +1294,7 @@ export default function App() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Files Scanned</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total {stats?.overall.unit || 'Files'} Scanned</span>
                     {(!stats || stats.mode !== 'personal') ? (
                       <div className="h-9 w-24 bg-slate-200 animate-pulse rounded-lg mt-1" />
                     ) : (
@@ -1369,7 +1379,7 @@ export default function App() {
                     <thead>
                       <tr className="text-slate-400 font-medium border-b border-black/5">
                         <th className="text-left pb-3">Operator Name</th>
-                        <th className="text-right pb-3">Scanned Files</th>
+                        <th className="text-right pb-3">Scanned {stats?.overall.unit || 'Files'}</th>
                         <th className="text-right pb-3">Scanned Pages</th>
                       </tr>
                     </thead>
@@ -1512,11 +1522,34 @@ export default function App() {
                     />
                     <input 
                       type="number" 
-                      placeholder="Target Files"
+                      placeholder={`Target ${stats?.overall.unit || 'Files'}`}
                       value={newSiteTarget}
                       onChange={(e) => setNewSiteTarget(e.target.value)}
                       className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
                     />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-indigo-400 uppercase ml-1">Rate (Rs)</label>
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          placeholder="Rate"
+                          value={newSiteRate}
+                          onChange={(e) => setNewSiteRate(e.target.value)}
+                          className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-indigo-400 uppercase ml-1">Unit Label</label>
+                        <input 
+                          type="text" 
+                          placeholder="Files/Registers"
+                          value={newSiteUnit}
+                          onChange={(e) => setNewSiteUnit(e.target.value)}
+                          className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                      </div>
+                    </div>
                     <button 
                       onClick={handleAddSite}
                       className="w-full bg-indigo-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all"
@@ -1535,7 +1568,9 @@ export default function App() {
                       <thead>
                         <tr className="text-slate-400 font-medium border-b border-black/5">
                           <th className="text-left pb-3">Site Name</th>
-                          <th className="text-right pb-3">Total Files</th>
+                          <th className="text-right pb-3">Rate</th>
+                          <th className="text-right pb-3">Unit</th>
+                          <th className="text-right pb-3">Total Scanned</th>
                           <th className="text-right pb-3">Total Pages</th>
                           <th className="text-right pb-3 text-orange-600">EP</th>
                           <th className="text-right pb-3">Action</th>
@@ -1545,6 +1580,8 @@ export default function App() {
                         {sitesSummary.map((site) => (
                           <tr key={site.id} className="group hover:bg-slate-50 transition-colors">
                             <td className="py-4 font-medium text-slate-700">{site.name}</td>
+                            <td className="py-4 text-right font-mono text-slate-600">{site.rate?.toFixed(2) || '0.30'}</td>
+                            <td className="py-4 text-right text-slate-500 text-xs">{site.unit || 'Files'}</td>
                             <td className="py-4 text-right font-mono text-slate-600">{site.total_files?.toLocaleString() || '0'}</td>
                             <td className="py-4 text-right font-mono text-slate-600">{site.total_pages?.toLocaleString() || '0'}</td>
                             <td className="py-4 text-right font-mono text-orange-600">{site.extra_pages?.toLocaleString() || '0'}</td>
@@ -1626,14 +1663,14 @@ export default function App() {
                       <tr className="text-slate-400 font-medium border-b border-black/5">
                         <th className="text-left pb-3">Operator Name</th>
                         <th className="text-left pb-3">Site</th>
-                        <th className="text-right pb-3">Total Files</th>
+                        <th className="text-right pb-3">Total {stats?.overall.unit || 'Files'}</th>
                         <th className="text-right pb-3">Total Pages</th>
                         <th className="text-right pb-3 text-emerald-600">Earnings (Rs)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-black/5">
                       {operatorsSummary.map((op) => {
-                        const earnings = (op.total_pages || 0) * 0.3;
+                        const earnings = (op.total_pages || 0) * (op.rate || 0.3);
                         return (
                           <tr key={op.id} className="group hover:bg-slate-50 transition-colors">
                             <td className="py-4 font-medium text-slate-700">{op.name}</td>
@@ -1710,7 +1747,7 @@ export default function App() {
                   </h4>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-blue-600 uppercase">Target Files</label>
+                      <label className="text-[10px] font-bold text-blue-600 uppercase">Target {stats?.overall.unit || 'Files'}</label>
                       <div className="space-y-2">
                         <input 
                           type="number" 
@@ -1882,7 +1919,7 @@ export default function App() {
                       <thead>
                         <tr className="text-slate-400 font-medium border-b border-black/5">
                           <th className="text-left pb-3">Month</th>
-                          <th className="text-right pb-3">Files</th>
+                          <th className="text-right pb-3">{stats?.overall.unit || 'Files'}</th>
                           <th className="text-right pb-3">Pages</th>
                           <th className="text-right pb-3 text-emerald-600">Rs</th>
                         </tr>
@@ -1928,7 +1965,7 @@ export default function App() {
                       <thead className="sticky top-0 bg-white z-10">
                         <tr className="text-slate-400 font-medium border-b border-black/5">
                           <th className="text-left py-3">Date</th>
-                          <th className="text-right py-3">Files</th>
+                          <th className="text-right py-3">{stats?.overall.unit || 'Files'}</th>
                           <th className="text-right py-3">Pages</th>
                           <th className="text-right py-3 text-emerald-600">Rs</th>
                         </tr>

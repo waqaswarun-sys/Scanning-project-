@@ -195,7 +195,9 @@ async function sendEmailReport(siteId: string, date: string) {
   try {
     const siteDoc = await db.collection('sites').doc(siteId).get();
     if (!siteDoc.exists) return;
-    const siteName = siteDoc.data()?.name || siteId;
+    const siteData = siteDoc.data();
+    const siteName = siteData?.name || siteId;
+    const siteUnit = siteData?.unit || 'Files';
 
     const scanningSnapshot = await db.collection('scanning_data')
       .where('site_id', '==', siteId)
@@ -251,7 +253,7 @@ async function sendEmailReport(siteId: string, date: string) {
                     <td style="padding: 8px 0; font-weight: bold; text-align: right;">${formattedDate}</td>
                   </tr>
                   <tr style="border-top: 1px solid #e2e8f0;">
-                    <td style="padding: 12px 0; color: #64748b; font-size: 14px;">Files Scanned</td>
+                    <td style="padding: 12px 0; color: #64748b; font-size: 14px;">${siteUnit} Scanned</td>
                     <td style="padding: 12px 0; font-weight: bold; font-size: 18px; text-align: right; color: #4f46e5;">${files.toLocaleString()}</td>
                   </tr>
                   <tr>
@@ -303,7 +305,7 @@ async function sendEmailReport(siteId: string, date: string) {
                 <thead>
                   <tr style="background: #f8fafc;">
                     <th style="padding: 10px; text-align: left; font-size: 12px; color: #64748b;">OPERATOR</th>
-                    <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">FILES</th>
+                    <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">${siteUnit.toUpperCase()}</th>
                     <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">PAGES</th>
                   </tr>
                 </thead>
@@ -358,7 +360,7 @@ async function sendEmailReport(siteId: string, date: string) {
                     <td colspan="2" style="text-align: center; font-size: 11px; opacity: 0.8; text-transform: uppercase; padding-bottom: 12px; letter-spacing: 1px;">Grand Total Summary</td>
                   </tr>
                   <tr>
-                    <td style="padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.2); font-size: 14px;">FILES</td>
+                    <td style="padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.2); font-size: 14px;">${siteUnit.toUpperCase()}</td>
                     <td style="padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.2); text-align: right; font-size: 20px; font-weight: bold;">${grandTotalFiles.toLocaleString()}</td>
                   </tr>
                   <tr>
@@ -371,7 +373,7 @@ async function sendEmailReport(siteId: string, date: string) {
               <div style="margin-top: 20px; padding: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
                 <p style="margin: 0 0 12px 0; font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">📋 Copy-Ready Summary:</p>
                 <div style="background: white; border: 2px solid #4f46e5; padding: 16px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 16px; color: #1e293b; white-space: pre-wrap; line-height: 1.6; -webkit-user-select: all; user-select: all; cursor: pointer;" title="Click to select all">${formattedDate}
-Total Files ${grandTotalFiles.toLocaleString()}
+Total ${siteUnit} ${grandTotalFiles.toLocaleString()}
 Total Pages ${grandTotalPages.toLocaleString()}</div>
                 <p style="margin: 8px 0 0 0; font-size: 11px; color: #4f46e5; font-weight: bold;">✨ Tip: Just tap or click the box above to select all text instantly!</p>
               </div>
@@ -405,7 +407,9 @@ async function sendMonthlyReports(siteId: string, monthStr: string) {
   try {
     const siteDoc = await db.collection('sites').doc(siteId).get();
     if (!siteDoc.exists) return;
-    const siteName = siteDoc.data()?.name || siteId;
+    const siteData = siteDoc.data();
+    const siteName = siteData?.name || siteId;
+    const siteUnit = siteData?.unit || 'Files';
 
     const employeesSnapshot = await db.collection('employees').where('site_id', '==', siteId).get();
     const employees = employeesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
@@ -477,7 +481,7 @@ async function sendMonthlyReports(siteId: string, monthStr: string) {
                   <thead>
                     <tr style="background: #f8fafc;">
                       <th style="padding: 10px; text-align: left; font-size: 12px; color: #64748b;">DATE</th>
-                      <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">FILES</th>
+                      <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">${siteUnit.toUpperCase()}</th>
                       <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">PAGES</th>
                       <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">EARNINGS</th>
                     </tr>
@@ -489,7 +493,7 @@ async function sendMonthlyReports(siteId: string, monthStr: string) {
                 <div style="margin-top: 24px; padding: 20px; background: #f8fafc; border-radius: 12px;">
                   <h3 style="margin: 0 0 16px 0; color: #1e293b; font-size: 16px;">Final Summary</h3>
                   <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                    <span style="color: #64748b;">Total Files</span>
+                    <span style="color: #64748b;">Total ${siteUnit}</span>
                     <span style="font-weight: bold;">${totalFiles.toLocaleString()}</span>
                   </div>
                   <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
@@ -1140,7 +1144,9 @@ async function startServer() {
           name: siteData.name,
           total_files: scanning.files,
           total_pages: scanning.pages + extraPages,
-          extra_pages: extraPages
+          extra_pages: extraPages,
+          rate: siteData.rate || 0.3,
+          unit: siteData.unit || 'Files'
         };
       }).filter(Boolean);
 
@@ -1166,7 +1172,12 @@ async function startServer() {
     try {
       const sitesSnapshot = await db.collection('sites').get();
       const sitesMap = new Map();
-      sitesSnapshot.docs.forEach(doc => sitesMap.set(doc.id, doc.data().name));
+      const sitesRateMap = new Map();
+      sitesSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        sitesMap.set(doc.id, data.name);
+        sitesRateMap.set(doc.id, data.rate || 0.3);
+      });
 
       const accessibleSiteIds = req.user.role === 'admin' 
         ? sitesSnapshot.docs.map(doc => doc.id)
@@ -1217,7 +1228,8 @@ async function startServer() {
           name: e.name,
           site_name: sitesMap.get(e.site_id) || 'Unknown',
           total_files: totals.files,
-          total_pages: totals.pages
+          total_pages: totals.pages,
+          rate: e.rate_per_page || sitesRateMap.get(e.site_id) || 0.3
         };
       });
 
@@ -1407,7 +1419,9 @@ async function startServer() {
       const overall = {
         total_files: totalFiles,
         total_pages: mode === 'main' ? (totalPages + extraPagesData.reduce((sum, d) => sum + (d.extra_pages || 0), 0)) : totalPages,
-        target_files: site?.target_files || 0
+        target_files: site?.target_files || 0,
+        unit: site?.unit || 'Files',
+        rate: site?.rate || 0.3
       };
 
       // Monthly stats
@@ -1512,7 +1526,7 @@ async function startServer() {
     const aoa: any[][] = [];
 
     // Summary Table at the top
-    aoa.push(["NAME", "FILES", "PAGES"]);
+    aoa.push(["NAME", (site?.unit || "FILES").toUpperCase(), "PAGES"]);
     let grandTotalFiles = 0;
     let grandTotalPages = 0;
     
@@ -1557,7 +1571,7 @@ async function startServer() {
       const totalFilesRow: any[] = ["", "", ""];
       employees.forEach(e => {
         const total = scanningData.filter(d => d.employee_id === e.id).reduce((sum, d) => sum + (d.files || 0), 0);
-        totalFilesRow.push("TOTAL FILES", total);
+        totalFilesRow.push("TOTAL " + (site?.unit || "FILES").toUpperCase(), total);
       });
       aoa.push(totalFilesRow);
 
@@ -1580,9 +1594,9 @@ async function startServer() {
       aoa.push(totalPagesRow);
 
     // Row 5: Headers
-    const headerRow: any[] = ["DATE", "TOTAL FILES", "TOTAL PAGES"];
+    const headerRow: any[] = ["DATE", "TOTAL " + (site?.unit || "FILES").toUpperCase(), "TOTAL PAGES"];
     employees.forEach(() => {
-      headerRow.push("FILES", "PAGES");
+      headerRow.push((site?.unit || "FILES").toUpperCase(), "PAGES");
     });
     aoa.push(headerRow);
 
@@ -1662,6 +1676,7 @@ async function startServer() {
       batch.delete(db.collection('sites').doc(id));
       
       await batch.commit();
+      clearCache('sites-summary');
       res.json({ success: true });
     } catch (error) {
       console.error("Site delete error:", error);
@@ -1673,12 +1688,17 @@ async function startServer() {
     if (!checkSiteAccess(req.user, req.params.id, 'admin-sites')) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    const { target_files } = req.body;
+    const { target_files, rate, unit } = req.body;
     try {
-      await db.collection('sites').doc(req.params.id).update({
-        target_files: Number(target_files),
+      const updateData: any = {
         updated_at: FieldValue.serverTimestamp()
-      });
+      };
+      if (target_files !== undefined) updateData.target_files = Number(target_files);
+      if (rate !== undefined) updateData.rate = Number(rate);
+      if (unit !== undefined) updateData.unit = String(unit);
+
+      await db.collection('sites').doc(req.params.id).update(updateData);
+      clearCache('sites-summary');
       res.json({ success: true });
     } catch (err) {
       console.error("Site update error:", err);
@@ -1688,7 +1708,7 @@ async function startServer() {
 
   app.post("/api/sites", requireAuth, async (req: any, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
-    const { name, target_files } = req.body;
+    const { name, target_files, rate, unit } = req.body;
     
     if (!name || typeof name !== 'string' || name.length < 2 || name.length > 50) {
       return res.status(400).json({ error: "Site name must be between 2 and 50 characters" });
@@ -1698,9 +1718,12 @@ async function startServer() {
       const docRef = await db.collection('sites').add({
         name,
         target_files: target_files || 0,
+        rate: rate || 0.3,
+        unit: unit || 'Files',
         created_at: FieldValue.serverTimestamp()
       });
-      res.json({ id: docRef.id, name, target_files });
+      clearCache('sites-summary');
+      res.json({ id: docRef.id, name, target_files, rate: rate || 0.3, unit: unit || 'Files' });
     } catch (err) {
       console.error("Site create error:", err);
       res.status(500).json({ error: "Failed to create site" });
@@ -1722,10 +1745,15 @@ async function startServer() {
     }
 
     try {
+      const siteDoc = await db.collection('sites').doc(site_id).get();
+      const siteData = siteDoc.exists ? siteDoc.data() : null;
+      const defaultRate = siteData?.rate || 0.3;
+
       const docRef = await db.collection('employees').add({
         name,
         site_id: String(site_id),
         is_active: true,
+        rate_per_page: defaultRate,
         created_at: FieldValue.serverTimestamp()
       });
       res.json({ id: docRef.id, name, site_id });
