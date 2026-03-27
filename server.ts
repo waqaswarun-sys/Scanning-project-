@@ -1948,6 +1948,23 @@ async function startServer() {
     }
   });
 
+  // SEO Files
+  app.get('/robots.txt', (req, res) => {
+    const publicPath = path.resolve('public/robots.txt');
+    const distPath = path.resolve('dist/robots.txt');
+    if (fs.existsSync(distPath)) return res.sendFile(distPath);
+    if (fs.existsSync(publicPath)) return res.sendFile(publicPath);
+    res.status(404).send('Not found');
+  });
+
+  app.get('/sitemap.xml', (req, res) => {
+    const publicPath = path.resolve('public/sitemap.xml');
+    const distPath = path.resolve('dist/sitemap.xml');
+    if (fs.existsSync(distPath)) return res.sendFile(distPath);
+    if (fs.existsSync(publicPath)) return res.sendFile(publicPath);
+    res.status(404).send('Not found');
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
