@@ -6,6 +6,17 @@ interface LoginPageProps {
   onLogin: () => void;
 }
 
+const Logo = ({ className = "w-8 h-8" }: { className?: string }) => (
+  <div className={`${className} bg-gradient-to-br from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-900/20`}>
+    <svg viewBox="0 0 24 24" fill="none" className="w-2/3 h-2/3 text-white" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 7h16" />
+      <path d="M4 12h16" />
+      <path d="M4 17h10" />
+      <path d="M18 15l3 3-3 3" opacity={0.5} />
+    </svg>
+  </div>
+);
+
 export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   const [showLogin, setShowLogin] = useState(false);
   const [view, setView] = useState<'login' | 'forgot' | 'reset' | 'success'>('login');
@@ -122,13 +133,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
       {/* Navbar */}
       <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-4 bg-[#0a0a0f]/80 backdrop-blur-xl border-b border-white/5">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-white" stroke="currentColor" strokeWidth={2}>
-              <rect x="3" y="3" width="18" height="4" rx="1"/>
-              <rect x="3" y="10" width="18" height="4" rx="1"/>
-              <rect x="3" y="17" width="11" height="4" rx="1"/>
-            </svg>
-          </div>
+          <Logo />
           <span className="text-lg font-bold tracking-tight">ScanTrack <span className="text-indigo-400">Pro</span></span>
         </div>
         <button
@@ -170,15 +175,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             Document Scanning Management
           </motion.div>
 
-          <h1 className="text-5xl md:text-7xl font-black tracking-tight mb-6 leading-none">
-            Track Every
-            <span className="block text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-violet-400 to-indigo-400">
-              Scan. Every Site.
-            </span>
+          <h1 className="text-5xl md:text-8xl font-black tracking-tighter mb-8 leading-[0.85] uppercase italic">
+            ScanTrack <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 via-violet-400 to-indigo-500">Pro</span>
           </h1>
 
-          <p className="text-lg md:text-xl text-white/40 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Centralized scanning management for multi-site operations. Real-time dashboards, operator tracking, and automated reports — all in one place.
+          <p className="text-xl md:text-2xl text-white/50 max-w-3xl mx-auto mb-12 leading-relaxed font-light">
+            The industry-leading document scanning and tracking solution. Streamline your office workflow with real-time monitoring and automated executive reporting.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -284,6 +286,41 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
         </motion.div>
       </section>
 
+      {/* About Section */}
+      <section className="px-6 md:px-12 py-24 bg-white/[0.02] border-t border-white/5">
+        <div className="max-w-5xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+            >
+              <h2 className="text-3xl md:text-4xl font-black mb-6 leading-tight">
+                Professional Document <br />
+                <span className="text-indigo-400 text-2xl md:text-3xl">Management Reimagined</span>
+              </h2>
+              <div className="space-y-4 text-white/40 leading-relaxed">
+                <p>
+                  ScanTrack Pro was built to solve the complexities of large-scale document scanning operations. From multi-site coordination to real-time operator performance tracking, our platform provides the tools you need to maintain high standards of record management.
+                </p>
+                <p>
+                  Our system ensures that every document is accounted for, providing a clear audit trail and automated reporting that keeps stakeholders informed without the manual overhead.
+                </p>
+              </div>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              className="relative aspect-video bg-gradient-to-br from-indigo-600/20 to-violet-600/20 rounded-3xl border border-white/10 flex items-center justify-center overflow-hidden group"
+            >
+              <div className="absolute inset-0 bg-[url('https://picsum.photos/seed/scanning/800/600')] bg-cover bg-center opacity-20 group-hover:opacity-30 transition-opacity" />
+              <Logo className="w-20 h-20 relative z-10" />
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="px-6 md:px-12 py-8 border-t border-white/5 text-center text-white/20 text-sm">
         © {new Date().getFullYear()} ScanTrack Pro. All rights reserved.
@@ -315,10 +352,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                   >
                     <X className="w-4 h-4 text-white" />
                   </button>
-                  <div className="inline-flex p-3 bg-white/10 rounded-xl mb-3">
-                    <Lock className="w-6 h-6 text-white" />
+                  <div className="flex flex-col items-center">
+                    <Logo className="w-12 h-12 mb-4 bg-white/10" />
+                    <h2 className="text-xl font-bold text-white">ScanTrack Pro</h2>
                   </div>
-                  <h2 className="text-xl font-bold text-white">ScanTrack Pro</h2>
                   <p className="text-white/60 text-sm mt-1">
                     {view === 'login' && 'Sign in to your account'}
                     {view === 'forgot' && 'Reset your password'}

@@ -722,9 +722,16 @@ export default function App() {
 
   if (loading) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="animate-pulse flex flex-col items-center gap-4">
-        <div className="w-12 h-12 bg-indigo-600 rounded-full"></div>
-        <p className="text-slate-500 font-medium">Loading ScanTrack Pro...</p>
+      <div className="animate-pulse flex flex-col items-center gap-6">
+        <div className="w-16 h-16 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-indigo-900/20">
+          <svg viewBox="0 0 24 24" fill="none" className="w-10 h-10 text-white" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 7h16" />
+            <path d="M4 12h16" />
+            <path d="M4 17h10" />
+            <path d="M18 15l3 3-3 3" opacity={0.5} />
+          </svg>
+        </div>
+        <p className="text-slate-400 font-bold tracking-widest uppercase text-xs">Loading ScanTrack Pro</p>
       </div>
     </div>
   );
@@ -737,9 +744,14 @@ export default function App() {
     >
       {/* Sidebar / Nav */}
       <nav className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-black/5 z-50 px-4 md:px-8 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="bg-indigo-600 p-2 rounded-lg">
-            <Layers className="w-6 h-6 text-white" />
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-900/10">
+            <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-white" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 7h16" />
+              <path d="M4 12h16" />
+              <path d="M4 17h10" />
+              <path d="M18 15l3 3-3 3" opacity={0.5} />
+            </svg>
           </div>
           <h1 className="text-xl font-bold tracking-tight hidden lg:block">ScanTrack Pro</h1>
 
