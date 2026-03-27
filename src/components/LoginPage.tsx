@@ -175,7 +175,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             Document Scanning Management
           </motion.div>
 
-          <h1 className="text-4xl md:text-7xl font-black tracking-tight mb-8 leading-tight uppercase italic pr-4">
+          <h1 className="text-4xl md:text-7xl font-black tracking-tight mb-8 leading-tight uppercase">
             ScanTrack <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 via-violet-400 to-indigo-500">Pro</span>
           </h1>
 
