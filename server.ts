@@ -454,12 +454,13 @@ async function sendMonthlyReports(siteId: string, monthStr: string) {
         totalEarnings += earnings;
 
         if (files > 0 || pages > 0 || isSunday(day)) {
+          const bgColor = isSunday(day) ? '#fef9f0' : (tableRows.split('<tr').length % 2 === 0 ? '#ffffff' : '#fafafa');
           tableRows += `
-            <tr>
-              <td style="padding: 8px; border-bottom: 1px solid #f1f5f9; font-size: 13px;">${format(day, 'dd MMM')} ${isSunday(day) ? '(Sun)' : ''}</td>
-              <td style="padding: 8px; border-bottom: 1px solid #f1f5f9; text-align: right;">${files.toLocaleString()}</td>
-              <td style="padding: 8px; border-bottom: 1px solid #f1f5f9; text-align: right;">${pages.toLocaleString()}</td>
-              <td style="padding: 8px; border-bottom: 1px solid #f1f5f9; text-align: right;">Rs. ${earnings.toFixed(2)}</td>
+            <tr style="background:${bgColor};">
+              <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#334155;">${format(day, 'dd MMM')}${isSunday(day) ? '<br/><span style="color:#f59e0b;font-size:10px;">(Sun)</span>' : ''}</td>
+              <td style="padding:8px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:12px;">${files > 0 ? files.toLocaleString() : '-'}</td>
+              <td style="padding:8px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:12px;">${pages > 0 ? pages.toLocaleString() : '-'}</td>
+              <td style="padding:8px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:12px;color:#4f46e5;font-weight:bold;">${earnings > 0 ? earnings.toFixed(0) : '-'}</td>
             </tr>
           `;
         }
@@ -471,42 +472,66 @@ async function sendMonthlyReports(siteId: string, monthStr: string) {
           to: userData.email,
           subject: `📜 Monthly Summary - ${monthName}`,
           html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-              <div style="background: #4f46e5; padding: 24px; border-radius: 12px 12px 0 0; text-align: center;">
-                <h1 style="color: white; margin: 0; font-size: 20px;">📜 Monthly Work Summary</h1>
-                <p style="color: #e0e7ff; margin: 4px 0 0 0;">${monthName} | ${employee.name}</p>
-              </div>
-              <div style="background: white; border: 1px solid #e2e8f0; border-top: none; padding: 24px; border-radius: 0 0 12px 12px;">
-                <table style="width: 100%; border-collapse: collapse;">
-                  <thead>
-                    <tr style="background: #f8fafc;">
-                      <th style="padding: 10px; text-align: left; font-size: 12px; color: #64748b;">DATE</th>
-                      <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">${siteUnit.toUpperCase()}</th>
-                      <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">PAGES</th>
-                      <th style="padding: 10px; text-align: right; font-size: 12px; color: #64748b;">EARNINGS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${tableRows}
-                  </tbody>
-                </table>
-                <div style="margin-top: 24px; padding: 20px; background: #f8fafc; border-radius: 12px;">
-                  <h3 style="margin: 0 0 16px 0; color: #1e293b; font-size: 16px;">Final Summary</h3>
-                  <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                    <span style="color: #64748b;">Total ${siteUnit}</span>
-                    <span style="font-weight: bold;">${totalFiles.toLocaleString()}</span>
-                  </div>
-                  <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                    <span style="color: #64748b;">Total Pages</span>
-                    <span style="font-weight: bold;">${totalPages.toLocaleString()}</span>
-                  </div>
-                  <div style="display: flex; justify-content: space-between; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0;">
-                    <span style="color: #1e293b; font-weight: bold;">TOTAL AMOUNT</span>
-                    <span style="color: #4f46e5; font-weight: bold; font-size: 20px;">Rs. ${totalEarnings.toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+</head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,sans-serif;">
+<div style="max-width:500px;margin:0 auto;padding:16px;">
+
+  <!-- Header -->
+  <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:24px 20px;border-radius:16px 16px 0 0;text-align:center;">
+    <div style="font-size:28px;margin-bottom:8px;">📜</div>
+    <h1 style="color:white;margin:0;font-size:20px;font-weight:bold;">Monthly Work Summary</h1>
+    <p style="color:#c7d2fe;margin:6px 0 0 0;font-size:14px;">${monthName} | ${employee.name}</p>
+  </div>
+
+  <!-- Table -->
+  <div style="background:white;border-radius:0 0 16px 16px;overflow:hidden;border:1px solid #e2e8f0;border-top:none;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      <thead>
+        <tr style="background:#f8fafc;">
+          <th style="padding:10px 8px;text-align:left;font-size:11px;color:#64748b;font-weight:bold;border-bottom:2px solid #e2e8f0;">DATE</th>
+          <th style="padding:10px 8px;text-align:right;font-size:11px;color:#64748b;font-weight:bold;border-bottom:2px solid #e2e8f0;">${siteUnit.toUpperCase()}</th>
+          <th style="padding:10px 8px;text-align:right;font-size:11px;color:#64748b;font-weight:bold;border-bottom:2px solid #e2e8f0;">PAGES</th>
+          <th style="padding:10px 8px;text-align:right;font-size:11px;color:#64748b;font-weight:bold;border-bottom:2px solid #e2e8f0;">EARN</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tableRows}
+      </tbody>
+    </table>
+
+    <!-- Final Summary -->
+    <div style="margin:16px;padding:16px;background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;">
+      <h3 style="margin:0 0 12px 0;color:#1e293b;font-size:15px;font-weight:bold;">Final Summary</h3>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="color:#64748b;font-size:13px;padding:4px 0;">Total ${siteUnit}</td>
+          <td style="text-align:right;font-weight:bold;font-size:13px;">${totalFiles.toLocaleString()}</td>
+        </tr>
+        <tr>
+          <td style="color:#64748b;font-size:13px;padding:4px 0;">Total Pages</td>
+          <td style="text-align:right;font-weight:bold;font-size:13px;">${totalPages.toLocaleString()}</td>
+        </tr>
+        <tr>
+          <td colspan="2" style="padding:10px 0 0 0;border-top:1px solid #e2e8f0;margin-top:8px;"></td>
+        </tr>
+        <tr>
+          <td style="color:#1e293b;font-weight:bold;font-size:14px;">TOTAL AMOUNT</td>
+          <td style="text-align:right;color:#4f46e5;font-weight:bold;font-size:22px;">Rs. ${totalEarnings.toLocaleString()}</td>
+        </tr>
+      </table>
+    </div>
+
+    <p style="text-align:center;color:#94a3b8;font-size:11px;padding:0 16px 16px;">ScanTrack Pro &bull; Authorized Access Only</p>
+  </div>
+
+</div>
+</body>
+</html>
           `
         });
         console.log(`[MONTHLY-REPORT] Sent to ${userData.username} (${userData.email})`);
