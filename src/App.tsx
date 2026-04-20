@@ -20,9 +20,11 @@ import {
   User,
   Menu,
   X,
-  ChevronDown
+  ChevronDown,
+  Globe
 } from 'lucide-react';
 import UserControlsPage from './components/UserControlsPage';
+import AppsPage from './components/AppsPage';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, startOfWeek, addDays, subWeeks, addWeeks, isSameDay, parseISO, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { 
@@ -77,7 +79,8 @@ export default function App() {
     'admin-sites' |
     'admin-operators' |
     'user-controls' |
-    'operator-summary'
+    'operator-summary' |
+    'apps'
   >('main-view');
   const [sites, setSites] = useState<Site[]>([]);
   const [sitesSummary, setSitesSummary] = useState<any[]>([]);
@@ -669,10 +672,10 @@ export default function App() {
   // Ordered views for swipe navigation based on user permissions
   const getSwipeViews = () => {
     if (currentUser?.role === 'admin') {
-      return ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'operator-summary', 'user-controls'];
+      return ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'operator-summary', 'user-controls', 'apps'];
     }
-    const permOrder = ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'operator-summary'];
-    return permOrder.filter(p => hasPermission(p));
+    const permOrder = ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'operator-summary', 'apps'];
+    return permOrder.filter(p => hasPermission(p) || p === 'apps');
   };
 
   const handleSwipe = (direction: 'left' | 'right') => {
@@ -865,6 +868,16 @@ export default function App() {
                 Settings
               </button>
             )}
+            <button 
+              onClick={() => setView('apps')}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                view === 'apps' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+              )}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              Apps
+            </button>
           </div>
         </div>
 
@@ -997,6 +1010,16 @@ export default function App() {
                                 Settings
                               </button>
                             )}
+                            <button 
+                              onClick={() => { setView('apps'); setIsMenuOpen(false); }}
+                              className={cn(
+                                "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
+                                view === 'apps' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
+                              )}
+                            >
+                              <Globe className="w-4 h-4" />
+                              Apps Center
+                            </button>
                           </>
                         )}
 
@@ -2127,6 +2150,15 @@ export default function App() {
                   </div>
                 </Card>
               </div>
+            </motion.div>
+          ) : view === 'apps' ? (
+            <motion.div 
+              key="apps"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+            >
+              <AppsPage apiFetch={apiFetch} currentUser={currentUser} />
             </motion.div>
           ) : (
             <div />

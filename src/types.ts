@@ -19,6 +19,14 @@ export interface ScanningData {
   date: string;
 }
 
+export interface Apps {
+  id: string;
+  name: string;
+  download_url: string;
+  image_url: string;
+  description: string;
+}
+
 export interface Stats {
   overall: {
     total_files: number | null;

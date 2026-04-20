@@ -103,6 +103,11 @@ service cloud.firestore {
       allow read, write: if isAdmin() || (isAuthenticated() && request.resource.data.user_id == request.auth.uid);
     }
 
+    match /apps/{appId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;

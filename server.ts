@@ -1973,6 +1973,52 @@ async function startServer() {
     }
   });
 
+  // Apps Management Routes
+  app.get("/api/apps", async (req: any, res) => {
+    try {
+      const appsSnapshot = await db.collection('apps').get();
+      const apps = appsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      res.json(apps);
+    } catch (err) {
+      console.error('[APPS-GET] Error:', err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/apps", requireAuth, async (req: any, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
+    const { name, download_url, image_url, description } = req.body;
+    
+    if (!name || !download_url) {
+      return res.status(400).json({ error: "Name and download URL are required" });
+    }
+
+    try {
+      const docRef = await db.collection('apps').add({
+        name,
+        download_url,
+        image_url: image_url || '',
+        description: description || '',
+        created_at: FieldValue.serverTimestamp()
+      });
+      res.json({ id: docRef.id, name, download_url, image_url, description });
+    } catch (err) {
+      console.error('[APPS-POST] Error:', err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/apps/:id", requireAuth, async (req: any, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
+    try {
+      await db.collection('apps').doc(req.params.id).delete();
+      res.json({ success: true });
+    } catch (err) {
+      console.error('[APPS-DELETE] Error:', err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // SEO Files
   app.get('/robots.txt', (req, res) => {
     const publicPath = path.resolve('public/robots.txt');

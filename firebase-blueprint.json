@@ -70,6 +70,19 @@
         "created_at": { "type": "string", "format": "date-time" }
       },
       "required": ["user_id"]
+    },
+    "App": {
+      "title": "App",
+      "description": "Downloadable application or tool",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "download_url": { "type": "string" },
+        "image_url": { "type": "string" },
+        "description": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "download_url"]
     }
   },
   "firestore": {
@@ -78,6 +91,7 @@
     "/scanning_data": { "schema": "ScanningData", "description": "Collection of scanning records" },
     "/daily_extra_pages": { "schema": "DailyExtraPages", "description": "Collection of extra pages" },
     "/users": { "schema": "User", "description": "Collection of users" },
-    "/user_tokens": { "schema": "UserToken", "description": "Collection of auth tokens" }
+    "/user_tokens": { "schema": "UserToken", "description": "Collection of auth tokens" },
+    "/apps": { "schema": "App", "description": "Collection of downloadable apps" }
   }
 }
