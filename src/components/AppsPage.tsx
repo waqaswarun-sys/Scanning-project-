@@ -42,6 +42,16 @@ export default function AppsPage({ currentUser, apiFetch }: AppsPageProps) {
     setIsSubmitting(true);
     setMessage(null);
 
+    // Auto-convert Google Drive sharing links to direct image links
+    let processedImageUrl = newAppImage;
+    if (newAppImage.includes('drive.google.com')) {
+      const match = newAppImage.match(/\/d\/(.+?)\/|(?:id=)(.+?)(?:&|$)/);
+      const fileId = match ? (match[1] || match[2]) : null;
+      if (fileId) {
+        processedImageUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
+      }
+    }
+
     try {
       const res = await apiFetch('/api/apps', {
         method: 'POST',
@@ -49,7 +59,7 @@ export default function AppsPage({ currentUser, apiFetch }: AppsPageProps) {
         body: JSON.stringify({
           name: newAppName,
           download_url: newAppUrl,
-          image_url: newAppImage,
+          image_url: processedImageUrl,
           description: newAppDesc
         })
       });
