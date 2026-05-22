@@ -1701,7 +1701,7 @@ export default function App() {
                         <label className="text-[10px] font-bold text-indigo-400 uppercase ml-1">Rate (Rs)</label>
                         <input 
                           type="number" 
-                          step="0.01"
+                          step="0.001"
                           placeholder="Rate"
                           value={newSiteRate}
                           onChange={(e) => setNewSiteRate(e.target.value)}
@@ -1754,7 +1754,7 @@ export default function App() {
                                 <div className="flex items-center justify-end gap-1.5">
                                   <input 
                                     type="number" 
-                                    step="0.01"
+                                    step="0.001"
                                     value={newSiteRateValue}
                                     onChange={(e) => setNewSiteRateValue(e.target.value)}
                                     className="w-16 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
@@ -1777,7 +1777,11 @@ export default function App() {
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
-                                  <span>{site.rate?.toFixed(2) || '0.30'}</span>
+                                  <span>
+                                    {site.rate !== undefined && site.rate !== null 
+                                      ? site.rate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) 
+                                      : '0.30'}
+                                  </span>
                                   <button 
                                     type="button"
                                     onClick={() => {
@@ -1905,7 +1909,7 @@ export default function App() {
                           {operatorsSummary.reduce((sum, op) => sum + (op.total_pages || 0), 0).toLocaleString()}
                         </td>
                         <td className="py-4 text-right font-mono text-emerald-700">
-                          {operatorsSummary.reduce((sum, op) => sum + ((op.total_pages || 0) * 0.3), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {operatorsSummary.reduce((sum, op) => sum + ((op.total_pages || 0) * (op.rate || 0.3)), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                       </tr>
                     </tfoot>
@@ -2037,7 +2041,7 @@ export default function App() {
                           <div className="flex items-center gap-2 mt-2">
                             <input 
                               type="number" 
-                              step="0.01"
+                              step="0.001"
                               value={newRateValue}
                               onChange={(e) => setNewRateValue(e.target.value)}
                               className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-indigo-500"
@@ -2060,7 +2064,9 @@ export default function App() {
                         )}
                         
                         <div className="text-[10px] font-bold text-slate-400 uppercase">
-                          Rate: Rs {(operator as any).rate_per_page || 0.30} / page
+                          Rate: Rs {((operator as any).rate_per_page !== undefined && (operator as any).rate_per_page !== null) 
+                            ? Number((operator as any).rate_per_page).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) 
+                            : '0.30'} / page
                         </div>
                       </div>
                     ))}

@@ -1723,7 +1723,24 @@ async function startServer() {
       if (unit !== undefined) updateData.unit = String(unit);
 
       await db.collection('sites').doc(req.params.id).update(updateData);
+
+      if (rate !== undefined) {
+        const employeesSnapshot = await db.collection('employees').where('site_id', '==', req.params.id).get();
+        if (!employeesSnapshot.empty) {
+          const batch = db.batch();
+          employeesSnapshot.docs.forEach(doc => {
+            batch.update(doc.ref, { 
+              rate_per_page: Number(rate),
+              updated_at: FieldValue.serverTimestamp()
+            });
+          });
+          await batch.commit();
+        }
+      }
+
       clearCache('sites-summary');
+      clearCache('operators-summary');
+      clearCache('stats');
       res.json({ success: true });
     } catch (err) {
       console.error("Site update error:", err);
