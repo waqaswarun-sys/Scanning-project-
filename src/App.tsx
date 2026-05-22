@@ -21,7 +21,8 @@ import {
   Menu,
   X,
   ChevronDown,
-  Globe
+  Globe,
+  Edit
 } from 'lucide-react';
 import UserControlsPage from './components/UserControlsPage';
 import AppsPage from './components/AppsPage';
@@ -128,6 +129,8 @@ export default function App() {
   const [summaryMonth, setSummaryMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [isUpdatingRate, setIsUpdatingRate] = useState<string | number | null>(null);
   const [newRateValue, setNewRateValue] = useState('');
+  const [isUpdatingSiteRate, setIsUpdatingSiteRate] = useState<string | number | null>(null);
+  const [newSiteRateValue, setNewSiteRateValue] = useState('');
 
   const apiFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const token = localStorage.getItem('authToken');
@@ -374,6 +377,25 @@ export default function App() {
         setIsUpdatingRate(null);
         setNewRateValue('');
         fetchAdminData();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const updateSiteRate = async (id: string | number, rate: number) => {
+    try {
+      const res = await apiFetch(`/api/sites/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rate })
+      });
+      if (res.ok) {
+        setIsUpdatingSiteRate(null);
+        setNewSiteRateValue('');
+        fetchSites();
+        fetchSitesSummary();
+        fetchStats();
       }
     } catch (err) {
       console.error(err);
@@ -1727,7 +1749,49 @@ export default function App() {
                         {sitesSummary.map((site) => (
                           <tr key={site.id} className="group hover:bg-slate-50 transition-colors">
                             <td className="py-4 font-medium text-slate-700">{site.name}</td>
-                            <td className="py-4 text-right font-mono text-slate-600">{site.rate?.toFixed(2) || '0.30'}</td>
+                            <td className="py-2 text-right font-mono text-slate-600">
+                              {isUpdatingSiteRate === site.id ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <input 
+                                    type="number" 
+                                    step="0.01"
+                                    value={newSiteRateValue}
+                                    onChange={(e) => setNewSiteRateValue(e.target.value)}
+                                    className="w-16 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                                    autoFocus
+                                  />
+                                  <button 
+                                    onClick={() => updateSiteRate(site.id, parseFloat(newSiteRateValue) || 0)}
+                                    className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
+                                    title="Save"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button 
+                                    onClick={() => setIsUpdatingSiteRate(null)}
+                                    className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
+                                  <span>{site.rate?.toFixed(2) || '0.30'}</span>
+                                  <button 
+                                    type="button"
+                                    onClick={() => {
+                                      setIsUpdatingSiteRate(site.id);
+                                      setNewSiteRateValue(site.rate?.toString() || '0.30');
+                                    }}
+                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                    title="Edit Rate"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
                             <td className="py-4 text-right text-slate-500 text-xs">{site.unit || 'Files'}</td>
                             <td className="py-4 text-right font-mono text-slate-600">{site.total_files?.toLocaleString() || '0'}</td>
                             <td className="py-4 text-right font-mono text-slate-600">{site.total_pages?.toLocaleString() || '0'}</td>
