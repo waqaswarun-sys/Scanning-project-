@@ -1784,7 +1784,7 @@ export default function App() {
                                       setIsUpdatingSiteRate(site.id);
                                       setNewSiteRateValue(site.rate?.toString() || '0.30');
                                     }}
-                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
                                     title="Edit Rate"
                                   >
                                     <Edit className="w-3.5 h-3.5" />
