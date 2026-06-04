@@ -1519,7 +1519,9 @@ async function startServer() {
     if (!checkSiteAccess(req.user, siteId, 'admin-reports')) {
       return res.status(403).json({ error: "Access denied" });
     }
-    const monthStr = req.query.month as string || format(new Date(), 'yyyy-MM');
+    const monthStr = req.query.month as string;
+    const startDateQuery = req.query.startDate as string;
+    const endDateQuery = req.query.endDate as string;
     const mode = (req.query.mode as string) || 'personal'; // 'personal' or 'main'
     
     try {
@@ -1530,21 +1532,37 @@ async function startServer() {
       const employeesSnapshot = await db.collection('employees').where('site_id', '==', siteId).get();
       const employees = employeesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
 
-      const startDate = startOfMonth(parseISO(monthStr + "-01"));
-      const endDate = endOfMonth(startDate);
+      let startDate: Date;
+      let endDate: Date;
+      let queryStartStr: string;
+      let queryEndStr: string;
+
+      if (startDateQuery && endDateQuery) {
+        startDate = parseISO(startDateQuery);
+        endDate = parseISO(endDateQuery);
+        queryStartStr = startDateQuery;
+        queryEndStr = endDateQuery;
+      } else {
+        const activeMonth = monthStr || format(new Date(), 'yyyy-MM');
+        startDate = startOfMonth(parseISO(activeMonth + "-01"));
+        endDate = endOfMonth(startDate);
+        queryStartStr = format(startDate, 'yyyy-MM-dd');
+        queryEndStr = format(endDate, 'yyyy-MM-dd');
+      }
+
       const days = eachDayOfInterval({ start: startDate, end: endDate });
 
       const scanningSnapshot = await db.collection('scanning_data')
         .where('site_id', '==', siteId)
-        .where('date', '>=', monthStr + "-01")
-        .where('date', '<=', monthStr + "-31")
+        .where('date', '>=', queryStartStr)
+        .where('date', '<=', queryEndStr)
         .get();
       const scanningData = scanningSnapshot.docs.map(doc => doc.data());
 
       const extraSnapshot = await db.collection('daily_extra_pages')
         .where('site_id', '==', siteId)
-        .where('date', '>=', monthStr + "-01")
-        .where('date', '<=', monthStr + "-31")
+        .where('date', '>=', queryStartStr)
+        .where('date', '<=', queryEndStr)
         .get();
       const extraPagesData = extraSnapshot.docs.map(doc => doc.data());
 
@@ -1583,7 +1601,10 @@ async function startServer() {
     
     // Row 1: Title
     const titleRow: any[] = Array(3 + employees.length * 2).fill("");
-    titleRow[1] = `${format(startDate, 'MMMM').toUpperCase()} SCANNING (${mode.toUpperCase()})`;
+    const titleText = startDateQuery && endDateQuery 
+      ? `SCANNING FROM ${format(startDate, 'dd MMM yyyy').toUpperCase()} TO ${format(endDate, 'dd MMM yyyy').toUpperCase()} (${mode.toUpperCase()})`
+      : `${format(startDate, 'MMMM yyyy').toUpperCase()} SCANNING (${mode.toUpperCase()})`;
+    titleRow[1] = titleText;
     aoa.push(titleRow);
 
     // Row 2: Operator Names

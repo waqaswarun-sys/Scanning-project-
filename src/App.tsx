@@ -100,6 +100,9 @@ export default function App() {
   const [isDownloading, setIsDownloading] = useState<'personal' | 'main' | null>(null);
   const [addEmployeeMessage, setAddEmployeeMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [exportMonth, setExportMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [exportType, setExportType] = useState<'month' | 'range'>('month');
+  const [exportStartDate, setExportStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [exportEndDate, setExportEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [operatorsMonth, setOperatorsMonth] = useState(format(new Date(), 'yyyy-MM'));
 
   // Company State
@@ -559,14 +562,24 @@ export default function App() {
     if (!selectedSiteId) return;
     setIsDownloading(mode);
     const token = localStorage.getItem('authToken');
-    const url = `/api/export/${selectedSiteId}?month=${exportMonth}&mode=${mode}&token=${token || ''}`;
+    
+    let url = `/api/export/${selectedSiteId}?mode=${mode}&token=${token || ''}`;
+    let filename = `${mode}-report.xlsx`;
+    if (exportType === 'month') {
+      url += `&month=${exportMonth}`;
+      filename = `${exportMonth}-${mode}.xlsx`;
+    } else {
+      url += `&startDate=${exportStartDate}&endDate=${exportEndDate}`;
+      filename = `report-${exportStartDate}-to-${exportEndDate}-${mode}.xlsx`;
+    }
+
     try {
       const res = await fetch(url);
       if (res.ok) {
         const blob = await res.blob();
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `${exportMonth}-${mode}.xlsx`;
+        a.download = filename;
         a.click();
         URL.revokeObjectURL(a.href);
       }
@@ -1602,25 +1615,76 @@ export default function App() {
                 
                 <div className="max-w-2xl mx-auto space-y-6">
                     <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
-                      <h4 className="font-bold text-slate-900 mb-4 uppercase text-xs tracking-wider">Export Settings</h4>
+                      <div className="flex items-center justify-between mb-4 pb-4 border-b border-indigo-100/50">
+                        <h4 className="font-bold text-slate-900 uppercase text-xs tracking-wider">Export Settings</h4>
+                        
+                        <div className="flex bg-slate-200/60 p-0.5 rounded-lg text-xs font-semibold">
+                          <button
+                            type="button"
+                            onClick={() => setExportType('month')}
+                            className={cn(
+                              "px-2.5 py-1 rounded-md transition-all",
+                              exportType === 'month' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
+                            )}
+                          >
+                            Month-wise
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setExportType('range')}
+                            className={cn(
+                              "px-2.5 py-1 rounded-md transition-all",
+                              exportType === 'range' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
+                            )}
+                          >
+                            Custom Range
+                          </button>
+                        </div>
+                      </div>
+
                       <div className="space-y-4">
-                        <div className="flex items-center justify-between gap-4">
-                          <span className="text-sm font-medium text-slate-600">Select Month:</span>
-                          <input 
-                            type="month" 
-                            value={exportMonth}
-                            onChange={(e) => setExportMonth(e.target.value)}
-                            className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-indigo-500/20"
-                          />
-                        </div>
-                        <div className="flex items-center justify-between gap-4">
-                          <span className="text-sm font-medium text-slate-600">Extra Pages:</span>
-                          <div className="flex items-center gap-2">
-                            <span className="bg-orange-50 text-orange-700 px-4 py-2 rounded-xl text-sm font-bold border border-orange-100">
-                              {stats?.monthly.find(m => m.month === exportMonth)?.extra_pages || 0}
-                            </span>
+                        {exportType === 'month' ? (
+                          <>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-sm font-medium text-slate-600">Select Month:</span>
+                              <input 
+                                type="month" 
+                                value={exportMonth}
+                                onChange={(e) => setExportMonth(e.target.value)}
+                                className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-indigo-500/20 text-slate-700 outline-none"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-sm font-medium text-slate-600">Extra Pages:</span>
+                              <div className="flex items-center gap-2">
+                                <span className="bg-orange-50 text-orange-700 px-4 py-2 rounded-xl text-sm font-bold border border-orange-100">
+                                  {stats?.monthly.find(m => m.month === exportMonth)?.extra_pages || 0}
+                                </span>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-sm font-medium text-slate-600">From Date:</span>
+                              <input 
+                                type="date" 
+                                value={exportStartDate}
+                                onChange={(e) => setExportStartDate(e.target.value)}
+                                className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-indigo-500/20 text-slate-700 outline-none"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-sm font-medium text-slate-600">To Date:</span>
+                              <input 
+                                type="date" 
+                                value={exportEndDate}
+                                onChange={(e) => setExportEndDate(e.target.value)}
+                                className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-indigo-500/20 text-slate-700 outline-none"
+                              />
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     </div>
 
