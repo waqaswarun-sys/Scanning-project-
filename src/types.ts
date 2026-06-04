@@ -32,6 +32,7 @@ export interface Stats {
     total_files: number | null;
     total_pages: number | null;
     target_files: number;
+    total_mouza_scanned?: number;
   };
   monthly: Array<{
     month: string;

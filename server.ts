@@ -1445,6 +1445,7 @@ async function startServer() {
         total_files: totalFiles,
         total_pages: mode === 'main' ? (totalPages + extraPagesData.reduce((sum, d) => sum + (d.extra_pages || 0), 0)) : totalPages,
         target_files: site?.target_files || 0,
+        total_mouza_scanned: site?.total_mouza_scanned || 0,
         unit: site?.unit || 'Files',
         rate: site?.rate || 0.3
       };
@@ -1713,7 +1714,7 @@ async function startServer() {
     if (!checkSiteAccess(req.user, req.params.id, 'admin-sites')) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    const { target_files, rate, unit } = req.body;
+    const { target_files, rate, unit, total_mouza_scanned } = req.body;
     try {
       const updateData: any = {
         updated_at: FieldValue.serverTimestamp()
@@ -1721,6 +1722,7 @@ async function startServer() {
       if (target_files !== undefined) updateData.target_files = Number(target_files);
       if (rate !== undefined) updateData.rate = Number(rate);
       if (unit !== undefined) updateData.unit = String(unit);
+      if (total_mouza_scanned !== undefined) updateData.total_mouza_scanned = Number(total_mouza_scanned);
 
       await db.collection('sites').doc(req.params.id).update(updateData);
 
@@ -1750,7 +1752,7 @@ async function startServer() {
 
   app.post("/api/sites", requireAuth, async (req: any, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
-    const { name, target_files, rate, unit } = req.body;
+    const { name, target_files, rate, unit, total_mouza_scanned } = req.body;
     
     if (!name || typeof name !== 'string' || name.length < 2 || name.length > 50) {
       return res.status(400).json({ error: "Site name must be between 2 and 50 characters" });
@@ -1760,12 +1762,13 @@ async function startServer() {
       const docRef = await db.collection('sites').add({
         name,
         target_files: target_files || 0,
+        total_mouza_scanned: total_mouza_scanned || 0,
         rate: rate || 0.3,
         unit: unit || 'Files',
         created_at: FieldValue.serverTimestamp()
       });
       clearCache('sites-summary');
-      res.json({ id: docRef.id, name, target_files, rate: rate || 0.3, unit: unit || 'Files' });
+      res.json({ id: docRef.id, name, target_files, total_mouza_scanned: total_mouza_scanned || 0, rate: rate || 0.3, unit: unit || 'Files' });
     } catch (err) {
       console.error("Site create error:", err);
       res.status(500).json({ error: "Failed to create site" });

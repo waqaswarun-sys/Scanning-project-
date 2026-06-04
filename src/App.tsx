@@ -22,7 +22,8 @@ import {
   X,
   ChevronDown,
   Globe,
-  Edit
+  Edit,
+  Map
 } from 'lucide-react';
 import UserControlsPage from './components/UserControlsPage';
 import AppsPage from './components/AppsPage';
@@ -112,6 +113,7 @@ export default function App() {
   const [newSiteUnit, setNewSiteUnit] = useState('Files');
   const [newEmployeeName, setNewEmployeeName] = useState('');
   const [updateTargetValue, setUpdateTargetValue] = useState('');
+  const [updateMouzaValue, setUpdateMouzaValue] = useState('');
   const [confirmDeleteSite, setConfirmDeleteSite] = useState<string | number | null>(null);
   const [confirmDeleteEmployeeId, setConfirmDeleteEmployeeId] = useState<string | number | null>(null);
   const [copiedDate, setCopiedDate] = useState<string | null>(null);
@@ -614,6 +616,22 @@ export default function App() {
         body: JSON.stringify({ target_files: parseInt(updateTargetValue) })
       });
       setUpdateTargetValue('');
+      fetchStats();
+      fetchSites();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateMouza = async () => {
+    if (!selectedSiteId || !updateMouzaValue) return;
+    try {
+      await apiFetch(`/api/sites/${selectedSiteId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ total_mouza_scanned: parseInt(updateMouzaValue) || 0 })
+      });
+      setUpdateMouzaValue('');
       fetchStats();
       fetchSites();
     } catch (err) {
@@ -1231,7 +1249,7 @@ export default function App() {
                 </div>
               </div>
               {/* Summary Cards */}
-              <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-6">
                 <StatCard 
                   title={`Scanned ${stats?.overall.unit || 'Files'}`} 
                   value={stats?.overall.total_files?.toLocaleString() || '0'} 
@@ -1247,17 +1265,10 @@ export default function App() {
                   loading={!stats || stats.mode !== 'main'}
                 />
                 <StatCard 
-                  title={`Target ${stats?.overall.unit || 'Files'}`} 
-                  value={stats?.overall.target_files?.toLocaleString() || '0'} 
-                  icon={TrendingUp} 
+                  title="Total Mouza Scanned" 
+                  value={stats?.overall.total_mouza_scanned?.toLocaleString() || '0'} 
+                  icon={Map} 
                   colorClass="bg-emerald-500"
-                  loading={!stats || stats.mode !== 'main'}
-                />
-                <StatCard 
-                  title="Remaining" 
-                  value={Math.max(0, (stats?.overall.target_files || 0) - (stats?.overall.total_files || 0)).toLocaleString()} 
-                  icon={Plus} 
-                  colorClass="bg-orange-500"
                   loading={!stats || stats.mode !== 'main'}
                 />
               </div>
@@ -1966,7 +1977,7 @@ export default function App() {
                       <div className="space-y-2">
                         <input 
                           type="number" 
-                          placeholder={stats?.overall.target_files.toString()}
+                          placeholder={stats?.overall.target_files?.toString() || '0'}
                           value={updateTargetValue}
                           onChange={(e) => setUpdateTargetValue(e.target.value)}
                           className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20"
@@ -1975,7 +1986,26 @@ export default function App() {
                           onClick={handleUpdateTarget}
                           className="w-full bg-blue-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-blue-700 transition-all"
                         >
-                          Update
+                          Update Target
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-2 border-t border-blue-100/50">
+                      <label className="text-[10px] font-bold text-blue-600 uppercase">Total Mouza Scanned</label>
+                      <div className="space-y-2">
+                        <input 
+                          type="number" 
+                          placeholder={(stats?.overall.total_mouza_scanned !== undefined ? stats.overall.total_mouza_scanned : 0).toString()}
+                          value={updateMouzaValue}
+                          onChange={(e) => setUpdateMouzaValue(e.target.value)}
+                          className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20"
+                        />
+                        <button 
+                          onClick={handleUpdateMouza}
+                          className="w-full bg-indigo-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all"
+                        >
+                          Update Mouza
                         </button>
                       </div>
                     </div>
