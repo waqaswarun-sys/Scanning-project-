@@ -133,6 +133,8 @@ export default function App() {
   const [newRateValue, setNewRateValue] = useState('');
   const [isUpdatingSiteRate, setIsUpdatingSiteRate] = useState<string | number | null>(null);
   const [newSiteRateValue, setNewSiteRateValue] = useState('');
+  const [isUpdatingSiteUnit, setIsUpdatingSiteUnit] = useState<string | number | null>(null);
+  const [newSiteUnitValue, setNewSiteUnitValue] = useState('');
 
   const apiFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const token = localStorage.getItem('authToken');
@@ -395,6 +397,25 @@ export default function App() {
       if (res.ok) {
         setIsUpdatingSiteRate(null);
         setNewSiteRateValue('');
+        fetchSites();
+        fetchSitesSummary();
+        fetchStats();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const updateSiteUnit = async (id: string | number, unit: string) => {
+    try {
+      const res = await apiFetch(`/api/sites/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unit })
+      });
+      if (res.ok) {
+        setIsUpdatingSiteUnit(null);
+        setNewSiteUnitValue('');
         fetchSites();
         fetchSitesSummary();
         fetchStats();
@@ -1348,37 +1369,26 @@ export default function App() {
                           const isSunday = day.getDay() === 0;
 
                           return (
-                            <tr key={i} className={cn(
-                              "group transition-colors",
-                              isSunday ? "bg-orange-50/50" : "hover:bg-slate-50"
-                            )}>
+                            <tr key={i} className="group hover:bg-slate-50 transition-colors">
                               <td className="py-4 font-medium text-slate-700">
                                 {format(day, 'EEE, MMM d')}
                               </td>
-                              {isSunday ? (
-                                <td colSpan={3} className="py-4 text-center text-orange-600 font-bold uppercase tracking-widest text-xs">
-                                  Sunday - Rest Day
-                                </td>
-                              ) : (
-                                <>
-                                  <td className="py-4 text-right font-mono text-slate-600">{dayData?.files?.toLocaleString() || '-'}</td>
-                                  <td className="py-4 text-right font-mono text-slate-600">{dayData?.pages?.toLocaleString() || '-'}</td>
-                                  <td className="py-4 text-right">
-                                    <button 
-                                      onClick={() => handleCopy(day, dayData?.files || 0, dayData?.pages || 0)}
-                                      className={cn(
-                                        "p-1.5 rounded-lg transition-all",
-                                        copiedDate === dateStr 
-                                          ? "bg-emerald-100 text-emerald-600" 
-                                          : "text-slate-400 hover:bg-slate-100 hover:text-indigo-600"
-                                      )}
-                                      title="Copy to clipboard"
-                                    >
-                                      {copiedDate === dateStr ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                                    </button>
-                                  </td>
-                                </>
-                              )}
+                              <td className="py-4 text-right font-mono text-slate-600">{dayData?.files?.toLocaleString() || '-'}</td>
+                              <td className="py-4 text-right font-mono text-slate-600">{dayData?.pages?.toLocaleString() || '-'}</td>
+                              <td className="py-4 text-right">
+                                <button 
+                                  onClick={() => handleCopy(day, dayData?.files || 0, dayData?.pages || 0)}
+                                  className={cn(
+                                    "p-1.5 rounded-lg transition-all",
+                                    copiedDate === dateStr 
+                                      ? "bg-emerald-100 text-emerald-600" 
+                                      : "text-slate-400 hover:bg-slate-100 hover:text-indigo-600"
+                                  )}
+                                  title="Copy to clipboard"
+                                >
+                                  {copiedDate === dateStr ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                              </td>
                             </tr>
                           );
                         })}
@@ -1390,7 +1400,7 @@ export default function App() {
 
               {/* Analytics Content moved from Analyst page */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <Card className="lg:col-span-2">
+                <Card className="lg:col-span-3">
                   <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
                     <TrendingUp className="w-5 h-5 text-indigo-600" />
                     Last 7 Days Trend
@@ -1420,40 +1430,6 @@ export default function App() {
                     </ResponsiveContainer>
                   </div>
                 </Card>
-
-                <div className="space-y-8">
-                  <Card className="border-indigo-100 bg-indigo-50/20">
-                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-indigo-900">
-                      <CalendarIcon className="w-5 h-5" />
-                      Project Forecast
-                    </h3>
-                    {forecast && typeof forecast === 'object' ? (
-                      <div className="space-y-4">
-                        <div className="flex flex-col">
-                          <span className="text-xs font-medium text-indigo-600 uppercase tracking-wider">Estimated Completion</span>
-                          <span className="text-xl font-bold text-indigo-900">{forecast.date}</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="p-3 bg-white rounded-xl border border-indigo-100">
-                            <span className="block text-[10px] font-bold text-slate-400 uppercase">Days Left</span>
-                            <span className="text-lg font-bold text-indigo-600">{forecast.days}</span>
-                          </div>
-                          <div className="p-3 bg-white rounded-xl border border-indigo-100">
-                            <span className="block text-[10px] font-bold text-slate-400 uppercase">Avg. Rate</span>
-                            <span className="text-lg font-bold text-indigo-600">{forecast.rate} <span className="text-xs font-normal">f/d</span></span>
-                          </div>
-                        </div>
-                        <p className="text-[11px] text-slate-500 italic">
-                          * Based on scanning rate of the last 7 active days.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="py-8 text-center text-slate-400 text-sm italic">
-                        {forecast || "Insufficient data for forecast"}
-                      </div>
-                    )}
-                  </Card>
-                </div>
               </div>
             </motion.div>
           ) : view === 'personal-records' && hasPermission('personal-records') ? (
@@ -1807,7 +1783,49 @@ export default function App() {
                                 </div>
                               )}
                             </td>
-                            <td className="py-4 text-right text-slate-500 text-xs">{site.unit || 'Files'}</td>
+                            <td className="py-2 text-right text-slate-500 text-xs">
+                              {isUpdatingSiteUnit === site.id ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <input 
+                                    type="text" 
+                                    value={newSiteUnitValue}
+                                    onChange={(e) => setNewSiteUnitValue(e.target.value)}
+                                    placeholder="Unit"
+                                    className="w-20 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                                    autoFocus
+                                  />
+                                  <button 
+                                    onClick={() => updateSiteUnit(site.id, newSiteUnitValue || 'Files')}
+                                    className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
+                                    title="Save"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button 
+                                    onClick={() => setIsUpdatingSiteUnit(null)}
+                                    className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
+                                  <span>{site.unit || 'Files'}</span>
+                                  <button 
+                                    type="button"
+                                    onClick={() => {
+                                      setIsUpdatingSiteUnit(site.id);
+                                      setNewSiteUnitValue(site.unit || 'Files');
+                                    }}
+                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                    title="Edit Unit"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
                             <td className="py-4 text-right font-mono text-slate-600">{site.total_files?.toLocaleString() || '0'}</td>
                             <td className="py-4 text-right font-mono text-slate-600">{site.total_pages?.toLocaleString() || '0'}</td>
                             <td className="py-4 text-right font-mono text-orange-600">{site.extra_pages?.toLocaleString() || '0'}</td>
@@ -2010,6 +2028,37 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                </Card>
+
+                <Card className="border-indigo-100 bg-indigo-50/30">
+                  <h4 className="font-bold mb-4 flex items-center gap-2 text-indigo-950">
+                    <CalendarIcon className="w-4 h-4 text-indigo-600" /> Project Forecast
+                  </h4>
+                  {forecast && typeof forecast === 'object' ? (
+                    <div className="space-y-4">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Estimated Completion</span>
+                        <span className="text-xl font-bold text-indigo-900">{forecast.date}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-3 bg-white rounded-xl border border-indigo-100">
+                          <span className="block text-[10px] font-bold text-slate-400 uppercase">Days Left</span>
+                          <span className="text-lg font-bold text-indigo-600">{forecast.days}</span>
+                        </div>
+                        <div className="p-3 bg-white rounded-xl border border-indigo-100">
+                          <span className="block text-[10px] font-bold text-slate-400 uppercase">Avg. Rate</span>
+                          <span className="text-lg font-bold text-indigo-600">{forecast.rate} <span className="text-xs font-normal">f/d</span></span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-500 italic">
+                        * Based on scanning rate of the last 7 active days.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center text-slate-400 text-sm italic">
+                      {forecast || "Insufficient data for forecast"}
+                    </div>
+                  )}
                 </Card>
 
                 <Card className="lg:col-span-3 border-slate-200 bg-white">

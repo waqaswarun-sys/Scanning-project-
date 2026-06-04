@@ -1640,21 +1640,15 @@ async function startServer() {
         
         row.push(totalFiles || 0, totalPages || 0);
 
-        if (isSunday(day)) {
-          employees.forEach(() => {
-            row.push("SUNDAY", "SUNDAY");
-          });
-        } else {
-          employees.forEach(e => {
-            const empData = dayData.find(sd => sd.employee_id === e.id);
-            let p = empData?.pages || 0;
-            if (mode === 'main' && empData) {
-              const activeIds = dayData.map(sd => sd.employee_id);
-              p += getDeterministicSplit(extraForDay, e.id, activeIds, dateStr);
-            }
-            row.push(empData?.files || 0, p);
-          });
-        }
+        employees.forEach(e => {
+          const empData = dayData.find(sd => sd.employee_id === e.id);
+          let p = empData?.pages || 0;
+          if (mode === 'main' && empData) {
+            const activeIds = dayData.map(sd => sd.employee_id);
+            p += getDeterministicSplit(extraForDay, e.id, activeIds, dateStr);
+          }
+          row.push(empData?.files || 0, p);
+        });
         aoa.push(row);
       });
 
