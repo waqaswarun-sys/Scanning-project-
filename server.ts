@@ -1450,7 +1450,9 @@ async function startServer() {
 
   app.get("/api/mouzas", requireAuth, async (req: any, res) => {
     const { siteId } = req.query;
-    if (!siteId || !checkSiteAccess(req.user, siteId as string, 'main-view')) {
+    const hasMainView = checkSiteAccess(req.user, siteId as string, 'main-view');
+    const hasMouzaDetails = checkSiteAccess(req.user, siteId as string, 'mouza-details');
+    if (!siteId || (!hasMainView && !hasMouzaDetails)) {
       return res.status(403).json({ error: "Access denied" });
     }
 

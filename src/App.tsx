@@ -972,9 +972,9 @@ export default function App() {
   // Ordered views for swipe navigation based on user permissions
   const getSwipeViews = () => {
     if (currentUser?.role === 'admin') {
-      return ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'operator-summary', 'user-controls', 'apps'];
+      return ['main-view', 'personal-records', 'mouza-details', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'operator-summary', 'user-controls', 'apps'];
     }
-    const permOrder = ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'operator-summary', 'apps'];
+    const permOrder = ['main-view', 'personal-records', 'mouza-details', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'operator-summary', 'apps'];
     return permOrder.filter(p => hasPermission(p) || p === 'apps');
   };
 
@@ -1146,16 +1146,18 @@ export default function App() {
                 Summary
               </button>
             )}
-            <button 
-              onClick={() => setView('mouza-details')}
-              className={cn(
-                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
-                view === 'mouza-details' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-              )}
-            >
-              <Map className="w-3.5 h-3.5" />
-              Mouza Details
-            </button>
+             {hasPermission('mouza-details') && (
+              <button 
+                onClick={() => setView('mouza-details')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                  view === 'mouza-details' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <Map className="w-3.5 h-3.5" />
+                Mouza Details
+              </button>
+            )}
             {currentUser?.role === 'admin' && (
               <button 
                 onClick={() => setView('user-controls')}
@@ -1365,16 +1367,18 @@ export default function App() {
                             Operator Summary
                           </button>
                         )}
-                        <button 
-                          onClick={() => { setView('mouza-details'); setIsMenuOpen(false); }}
-                          className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
-                            view === 'mouza-details' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
-                          )}
-                        >
-                          <Map className="w-4 h-4" />
-                          Mouza Details
-                        </button>
+                        {hasPermission('mouza-details') && (
+                          <button 
+                            onClick={() => { setView('mouza-details'); setIsMenuOpen(false); }}
+                            className={cn(
+                              "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
+                              view === 'mouza-details' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
+                            )}
+                          >
+                            <Map className="w-4 h-4" />
+                            Mouza Details
+                          </button>
+                        )}
                       </div>
                     </motion.div>
                   </>
@@ -1428,9 +1432,11 @@ export default function App() {
                             <FileText className="w-4 h-4" /> Operator Summary
                           </button>
                         )}
-                        <button onClick={() => { setView('mouza-details'); setIsMenuOpen(false); }} className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all", view === 'mouza-details' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50")}>
-                          <Map className="w-4 h-4" /> Mouza Details
-                        </button>
+                        {hasPermission('mouza-details') && (
+                          <button onClick={() => { setView('mouza-details'); setIsMenuOpen(false); }} className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all", view === 'mouza-details' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50")}>
+                            <Map className="w-4 h-4" /> Mouza Details
+                          </button>
+                        )}
                       </div>
                     </motion.div>
                   </>
@@ -2214,7 +2220,7 @@ export default function App() {
                 )}
               </Card>
             </motion.div>
-          ) : view === 'mouza-details' ? (
+          ) : view === 'mouza-details' && hasPermission('mouza-details') ? (
             <motion.div 
               key="mouza-details"
               initial={{ opacity: 0, y: 10 }}

@@ -32,6 +32,7 @@ export default function UserControlsPage({ apiFetch, currentUser }: UserControls
   const availablePermissions = [
     { id: 'main-view', label: 'Dashboard' },
     { id: 'personal-records', label: 'Personal Records' },
+    { id: 'mouza-details', label: 'Mouza Details' },
     { id: 'admin-data-entry', label: 'Data Entry' },
     { id: 'admin-reports', label: 'Downloads' },
     { id: 'admin-sites', label: 'Manage Sites' },
