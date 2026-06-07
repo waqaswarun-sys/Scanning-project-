@@ -1319,6 +1319,7 @@ async function startServer() {
             is_active: e.is_active,
             files: sd ? sd.files : null,
             pages: sd ? sd.pages : null,
+            mouzas: sd ? (sd.mouzas || []) : [],
             date: date
           };
         });
@@ -1363,7 +1364,7 @@ async function startServer() {
 
       // Update individual entries
       for (const entry of entries) {
-        const { employee_id, files, pages } = entry;
+        const { employee_id, files, pages, mouzas } = entry;
         if (employee_id && files !== null && pages !== null) {
           const docId = `${employee_id}_${date}`;
           const docRef = db.collection('scanning_data').doc(docId);
@@ -1373,6 +1374,7 @@ async function startServer() {
             date,
             files: Number(files),
             pages: Number(pages),
+            mouzas: Array.isArray(mouzas) ? mouzas : [],
             updated_at: FieldValue.serverTimestamp()
           }, { merge: true });
         }
@@ -1409,6 +1411,73 @@ async function startServer() {
       res.json({ success: true });
     } catch (err) {
       console.error('[SCANNING_DATA] Save error:', err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/mouzas", requireAuth, async (req: any, res) => {
+    const { siteId } = req.query;
+    if (!siteId || !checkSiteAccess(req.user, siteId as string, 'main-view')) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    try {
+      // Fetch all scanning data for this site containing mouzas
+      const scanningSnapshot = await db.collection('scanning_data')
+        .where('site_id', '==', siteId)
+        .get();
+
+      // Fetch employees to map employee_id to name
+      const employeesSnapshot = await db.collection('employees')
+        .where('site_id', '==', siteId)
+        .get();
+      const employeeMap = new Map();
+      employeesSnapshot.docs.forEach(doc => {
+        employeeMap.set(doc.id, doc.data().name);
+      });
+
+      // Group mouzas
+      const mouzaGroups: { [mouzaName: string]: { name: string; RHZ: any[]; Mutation: any[]; Shajra: any[] } } = {};
+
+      scanningSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const date = data.date;
+        const operatorName = employeeMap.get(data.employee_id) || "Unknown Operator";
+
+        if (Array.isArray(data.mouzas)) {
+          data.mouzas.forEach((m: any) => {
+            if (!m || !m.name) return;
+            const normalizedName = m.name.trim().toUpperCase();
+            if (!mouzaGroups[normalizedName]) {
+              mouzaGroups[normalizedName] = {
+                name: m.name.trim(), // Keep original casing
+                RHZ: [],
+                Mutation: [],
+                Shajra: []
+              };
+            }
+
+            const targetGroup = mouzaGroups[normalizedName];
+            const typeKey = m.type as 'RHZ' | 'Mutation' | 'Shajra';
+            
+            if (typeKey === 'RHZ' || typeKey === 'Mutation' || typeKey === 'Shajra') {
+              targetGroup[typeKey].push({
+                years: m.years || 'Unknown',
+                quantity: isNaN(Number(m.quantity)) ? 1 : Number(m.quantity),
+                status: m.status || 'In Scanning',
+                operator: operatorName,
+                date: date
+              });
+            }
+          });
+        }
+      });
+
+      // Convert to array and sort by Mouza Name
+      const list = Object.values(mouzaGroups).sort((a, b) => a.name.localeCompare(b.name));
+      res.json(list);
+    } catch (err) {
+      console.error('[MOUZAS] Error fetching:', err);
       res.status(500).json({ error: "Internal server error" });
     }
   });

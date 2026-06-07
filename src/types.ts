@@ -10,12 +10,21 @@ export interface Employee {
   site_id: string | number;
 }
 
+export interface MouzaEntry {
+  name: string;
+  status: 'In Scanning' | 'Complete';
+  years: string;
+  type: 'RHZ' | 'Mutation' | 'Shajra';
+  quantity: number;
+}
+
 export interface ScanningData {
   employee_id: string | number;
   name: string;
   is_active: number;
   files: number | null;
   pages: number | null;
+  mouzas?: MouzaEntry[];
   date: string;
 }
 

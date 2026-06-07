@@ -23,7 +23,8 @@ import {
   ChevronDown,
   Globe,
   Edit,
-  Map
+  Map,
+  Search
 } from 'lucide-react';
 import UserControlsPage from './components/UserControlsPage';
 import AppsPage from './components/AppsPage';
@@ -42,7 +43,7 @@ import {
   Cell
 } from 'recharts';
 import { cn } from './lib/utils';
-import { Site, Employee, ScanningData, Stats } from './types';
+import { Site, Employee, ScanningData, Stats, MouzaEntry } from './types';
 import { LoginPage } from './components/LoginPage';
 
 // --- Components ---
@@ -82,6 +83,7 @@ export default function App() {
     'admin-operators' |
     'user-controls' |
     'operator-summary' |
+    'mouza-details' |
     'apps'
   >('main-view');
   const [sites, setSites] = useState<Site[]>([]);
@@ -138,6 +140,15 @@ export default function App() {
   const [newSiteRateValue, setNewSiteRateValue] = useState('');
   const [isUpdatingSiteUnit, setIsUpdatingSiteUnit] = useState<string | number | null>(null);
   const [newSiteUnitValue, setNewSiteUnitValue] = useState('');
+
+  // Mouza Details State
+  const [mouzasData, setMouzasData] = useState<any[]>([]);
+  const [mouzasLoading, setMouzasLoading] = useState(false);
+  const [mouzaSearch, setMouzaSearch] = useState('');
+
+  // Wizard Data Entry State
+  const [selectedOperatorIndex, setSelectedOperatorIndex] = useState<number>(0);
+  const [showCompletionMessage, setShowCompletionMessage] = useState<boolean>(false);
 
   const apiFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const token = localStorage.getItem('authToken');
@@ -294,6 +305,17 @@ export default function App() {
       fetchAdminData();
     }
   }, [selectedSiteId, view, adminDate]);
+
+  useEffect(() => {
+    if (selectedSiteId && view === 'mouza-details') {
+      fetchMouzasData();
+    }
+  }, [selectedSiteId, view]);
+
+  useEffect(() => {
+    setSelectedOperatorIndex(0);
+    setShowCompletionMessage(false);
+  }, [adminDate, selectedSiteId, view]);
 
   useEffect(() => {
     if (view === 'admin-sites') {
@@ -502,6 +524,22 @@ export default function App() {
     }
   };
 
+  const fetchMouzasData = async () => {
+    if (!selectedSiteId) return;
+    setMouzasLoading(true);
+    try {
+      const res = await apiFetch(`/api/mouzas?siteId=${selectedSiteId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMouzasData(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setMouzasLoading(false);
+    }
+  };
+
   const fetchAdminData = async () => {
     if (!selectedSiteId) return;
     setAdminData([]);
@@ -523,8 +561,55 @@ export default function App() {
     ));
   };
 
-  const saveAdminData = async () => {
-    if (!selectedSiteId) return;
+  const handleAddMouzaToCurrentOperator = () => {
+    setAdminData(prev => prev.map((item, idx) => {
+      if (idx === selectedOperatorIndex) {
+        const existingMouzas = item.mouzas || [];
+        return {
+          ...item,
+          mouzas: [
+            ...existingMouzas,
+            {
+              name: '',
+              status: 'In Scanning',
+              years: '',
+              type: 'RHZ',
+              quantity: 1
+            }
+          ]
+        };
+      }
+      return item;
+    }));
+  };
+
+  const handleUpdateMouzaField = (mouzaIdx: number, field: keyof MouzaEntry, value: any) => {
+    setAdminData(prev => prev.map((item, idx) => {
+      if (idx === selectedOperatorIndex) {
+        const updatedMouzas = (item.mouzas || []).map((m, mIdx) => {
+          if (mIdx === mouzaIdx) {
+            return { ...m, [field]: value };
+          }
+          return m;
+        });
+        return { ...item, mouzas: updatedMouzas };
+      }
+      return item;
+    }));
+  };
+
+  const handleRemoveMouza = (mouzaIdx: number) => {
+    setAdminData(prev => prev.map((item, idx) => {
+      if (idx === selectedOperatorIndex) {
+        const updatedMouzas = (item.mouzas || []).filter((_, mIdx) => mIdx !== mouzaIdx);
+        return { ...item, mouzas: updatedMouzas };
+      }
+      return item;
+    }));
+  };
+
+  const saveAdminData = async (): Promise<boolean> => {
+    if (!selectedSiteId) return false;
     setIsSaving(true);
     setSaveMessage(null);
     try {
@@ -537,7 +622,8 @@ export default function App() {
           entries: adminData.map(item => ({
             employee_id: item.employee_id,
             files: item.files || 0,
-            pages: item.pages || 0
+            pages: item.pages || 0,
+            mouzas: item.mouzas || []
           })),
           extra_pages: parseInt(extraPages.toString()) || 0
         })
@@ -545,16 +631,31 @@ export default function App() {
       
       if (res.ok) {
         setSaveMessage({ type: 'success', text: 'Data saved successfully!' });
-        fetchStats(view === 'admin' ? 'personal' : 'main');
+        fetchStats(view === 'admin-data-entry' ? 'personal' : 'main');
         setTimeout(() => setSaveMessage(null), 3000);
+        return true;
       } else {
         setSaveMessage({ type: 'error', text: 'Failed to save data. Please try again.' });
+        return false;
       }
     } catch (err) {
       console.error(err);
       setSaveMessage({ type: 'error', text: 'Network error. Please try again.' });
+      return false;
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSaveAndNextOperator = async () => {
+    const success = await saveAdminData();
+    if (success) {
+      if (selectedOperatorIndex === adminData.length - 1) {
+        setShowCompletionMessage(true);
+      } else {
+        setSelectedOperatorIndex(prev => prev + 1);
+        setShowCompletionMessage(false);
+      }
     }
   };
 
@@ -918,6 +1019,16 @@ export default function App() {
                 Summary
               </button>
             )}
+            <button 
+              onClick={() => setView('mouza-details')}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                view === 'mouza-details' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+              )}
+            >
+              <Map className="w-3.5 h-3.5" />
+              Mouza Details
+            </button>
             {currentUser?.role === 'admin' && (
               <button 
                 onClick={() => setView('user-controls')}
@@ -1127,6 +1238,16 @@ export default function App() {
                             Operator Summary
                           </button>
                         )}
+                        <button 
+                          onClick={() => { setView('mouza-details'); setIsMenuOpen(false); }}
+                          className={cn(
+                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
+                            view === 'mouza-details' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
+                          )}
+                        >
+                          <Map className="w-4 h-4" />
+                          Mouza Details
+                        </button>
                       </div>
                     </motion.div>
                   </>
@@ -1180,6 +1301,9 @@ export default function App() {
                             <FileText className="w-4 h-4" /> Operator Summary
                           </button>
                         )}
+                        <button onClick={() => { setView('mouza-details'); setIsMenuOpen(false); }} className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all", view === 'mouza-details' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50")}>
+                          <Map className="w-4 h-4" /> Mouza Details
+                        </button>
                       </div>
                     </motion.div>
                   </>
@@ -1500,11 +1624,15 @@ export default function App() {
               className="space-y-8"
             >
               <Card>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                  <h3 className="text-lg font-bold flex items-center gap-2">
-                    <Users className="w-5 h-5 text-indigo-600" />
-                    Daily Data Entry (Personal)
-                  </h3>
+                {/* View Header with globally shared configuration */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-6 border-b border-slate-100">
+                  <div>
+                    <h3 className="text-lg font-bold flex items-center gap-2 text-indigo-900">
+                      <Users className="w-5 h-5 text-indigo-600" />
+                      Daily Data Entry Wizard
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">Select date and operator to fill scanning progress and Mouzas</p>
+                  </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="relative h-[42px]">
                       <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -1526,76 +1654,533 @@ export default function App() {
                       />
                     </div>
                     <button 
-                      onClick={saveAdminData}
+                      onClick={() => saveAdminData()}
                       disabled={isSaving}
-                      className="bg-indigo-600 text-white px-6 h-[42px] rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20"
+                      className="bg-indigo-600 text-white px-6 h-[42px] rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20"
                     >
-                      {isSaving ? 'Saving...' : <><Save className="w-4 h-4" /> Save Data</>}
+                      {isSaving ? 'Saving...' : <><Save className="w-4 h-4" /> Save All Progress</>}
                     </button>
                   </div>
                 </div>
+
                 {saveMessage && (
                   <div className={cn(
-                    "mb-4 px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2",
+                    "mb-6 px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2",
                     saveMessage.type === 'success' ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"
                   )}>
                     {saveMessage.type === 'success' ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
                     {saveMessage.text}
                   </div>
                 )}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-slate-400 font-medium border-b border-black/5">
-                        <th className="text-left pb-3">Operator Name</th>
-                        <th className="text-right pb-3">Scanned {stats?.overall.unit || 'Files'}</th>
-                        <th className="text-right pb-3">Scanned Pages</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-black/5">
-                      {adminData.map((item) => (
-                        <tr key={item.employee_id} className={cn("group hover:bg-slate-50 transition-colors", !item.is_active && "opacity-60 bg-slate-50/30")}>
-                          <td className="py-4 font-medium text-slate-700">
-                            {item.name}
-                            {!item.is_active && (
-                              <span className="ml-2 text-[10px] font-bold text-slate-400 uppercase bg-slate-100 px-1.5 py-0.5 rounded">Inactive</span>
-                            )}
-                          </td>
-                          <td className="py-4 text-right">
+
+                {showCompletionMessage ? (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="bg-gradient-to-br from-indigo-50 to-emerald-50 border border-indigo-100 rounded-2xl p-8 text-center my-6"
+                  >
+                    <div className="w-14 h-14 bg-emerald-500 rounded-full flex items-center justify-center text-white text-2xl mx-auto mb-4 shadow-md">
+                      🎉
+                    </div>
+                    <h4 className="text-xl font-bold text-slate-800">All Operators Completed!</h4>
+                    <p className="text-slate-500 text-sm mt-2 max-w-md mx-auto">
+                      All operators data and scanned Mouzas for this date have been filled and synchronized safely with the server.
+                    </p>
+                    <div className="mt-6 flex justify-center gap-4">
+                      <button
+                        onClick={() => {
+                          setShowCompletionMessage(false);
+                          setSelectedOperatorIndex(0);
+                        }}
+                        className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-5 py-2 rounded-xl text-xs font-bold transition-all"
+                      >
+                        Start From Operator 1
+                      </button>
+                      <button
+                        onClick={() => setView('mouza-details')}
+                        className="bg-indigo-600 text-white hover:bg-indigo-700 px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-200"
+                      >
+                        View Mouza Details
+                      </button>
+                    </div>
+                  </motion.div>
+                ) : adminData.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 font-medium">
+                    No active operators registered for this site. Add operators in the "Operators" tab.
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Operator quick-selection grid / chip list */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+                        Active Operators List (Click to select)
+                      </label>
+                      <div className="flex flex-wrap gap-2.5">
+                        {adminData.map((item, index) => {
+                          const isCurrent = index === selectedOperatorIndex;
+                          const hasData = (item.files !== null && item.files > 0) || (item.pages !== null && item.pages > 0) || (item.mouzas && item.mouzas.length > 0);
+                          const mouzasCount = item.mouzas?.length || 0;
+                          return (
+                            <button
+                              type="button"
+                              key={item.employee_id}
+                              onClick={() => {
+                                setSelectedOperatorIndex(index);
+                                setShowCompletionMessage(false);
+                              }}
+                              className={cn(
+                                "px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border",
+                                isCurrent 
+                                  ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200" 
+                                  : hasData 
+                                    ? "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100" 
+                                    : "bg-white text-slate-400 border-dashed border-slate-200 hover:bg-slate-50"
+                              )}
+                            >
+                              <span className={cn(
+                                "w-2 h-2 rounded-full",
+                                hasData ? "bg-emerald-500" : "bg-slate-300"
+                              )} />
+                              <span>{item.name}</span>
+                              {mouzasCount > 0 && (
+                                <span className={cn(
+                                  "text-[9px] px-1.5 py-0.5 rounded-full font-bold",
+                                  isCurrent ? "bg-indigo-500 text-white" : "bg-indigo-100 text-indigo-800"
+                                )}>
+                                  {mouzasCount} m
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Active Operator Detail Entry section */}
+                    {adminData[selectedOperatorIndex] && (
+                      <div className="bg-slate-50/50 rounded-2xl border border-slate-100 p-6 space-y-6 mt-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 text-sm font-bold border border-indigo-100">
+                              {selectedOperatorIndex + 1}
+                            </div>
+                            <div>
+                              <h4 className="text-base font-bold text-slate-800">
+                                {adminData[selectedOperatorIndex].name}
+                              </h4>
+                              {!adminData[selectedOperatorIndex].is_active && (
+                                <span className="text-[10px] bg-slate-200 text-slate-600 font-bold px-1.5 py-0.5 rounded uppercase">Inactive</span>
+                              )}
+                            </div>
+                          </div>
+                          <span className="text-xs text-slate-400 font-bold">
+                            Operator Progress: {selectedOperatorIndex + 1} of {adminData.length}
+                          </span>
+                        </div>
+
+                        {/* General stats input */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-2">
+                              Scanned {stats?.overall.unit || 'Files'}
+                            </label>
                             <input 
                               type="number" 
-                              value={item.files === null ? '' : item.files}
-                              onChange={(e) => handleAdminChange(item.employee_id, 'files', e.target.value)}
+                              value={adminData[selectedOperatorIndex].files === null ? '' : adminData[selectedOperatorIndex].files}
+                              onChange={(e) => handleAdminChange(adminData[selectedOperatorIndex].employee_id, 'files', e.target.value)}
                               placeholder="0"
-                              className="w-24 bg-slate-100 border-none rounded-lg px-3 py-1.5 text-right text-sm font-mono focus:ring-2 focus:ring-indigo-500/20"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono"
                             />
-                          </td>
-                          <td className="py-4 text-right">
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-2">
+                              Scanned Pages
+                            </label>
                             <input 
                               type="number" 
-                              value={item.pages === null ? '' : item.pages}
-                              onChange={(e) => handleAdminChange(item.employee_id, 'pages', e.target.value)}
+                              value={adminData[selectedOperatorIndex].pages === null ? '' : adminData[selectedOperatorIndex].pages}
+                              onChange={(e) => handleAdminChange(adminData[selectedOperatorIndex].employee_id, 'pages', e.target.value)}
                               placeholder="0"
-                              className="w-24 bg-slate-100 border-none rounded-lg px-3 py-1.5 text-right text-sm font-mono focus:ring-2 focus:ring-indigo-500/20"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono"
                             />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-slate-50/50 font-bold">
-                        <td className="py-4 px-2">Daily Totals</td>
-                        <td className="py-4 text-right font-mono text-indigo-600">
-                          {adminData.reduce((sum, item) => sum + (item.files || 0), 0).toLocaleString()}
-                        </td>
-                        <td className="py-4 text-right font-mono text-indigo-600">
-                          {adminData.reduce((sum, item) => sum + (item.pages || 0), 0).toLocaleString()}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                          </div>
+                        </div>
+
+                        {/* Scanned Mouzas detail section */}
+                        <div className="border-t border-slate-100 pt-6 mt-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <div>
+                              <h5 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                <Globe className="w-4 h-4 text-indigo-500" />
+                                Scanned Mouzas Details
+                              </h5>
+                              <p className="text-[11px] text-slate-400 mt-1">Specify which Mouzas and Register Types were processed by this operator</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleAddMouzaToCurrentOperator}
+                              className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-indigo-100"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              Add Mouza Name
+                            </button>
+                          </div>
+
+                          {(!adminData[selectedOperatorIndex].mouzas || adminData[selectedOperatorIndex].mouzas.length === 0) ? (
+                            <div className="bg-white border border-dashed border-slate-200 rounded-xl p-8 text-center text-xs text-slate-400 font-medium">
+                              No Mouzas added yet for this operator. Click the "+ Add Mouza Name" button above to register a Mouza.
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              {adminData[selectedOperatorIndex].mouzas.map((m, mIdx) => (
+                                <div 
+                                  key={mIdx} 
+                                  className="bg-white border border-slate-100 rounded-xl p-4 flex flex-col gap-4 relative shadow-sm hover:shadow transition-shadow"
+                                >
+                                  {/* Delete trash button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveMouza(mIdx)}
+                                    className="absolute top-4 right-4 text-slate-400 hover:text-red-500 p-1 rounded-lg transition-colors"
+                                    title="Delete Mouza record"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+
+                                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end pr-8">
+                                    {/* Mouza Name */}
+                                    <div className="md:col-span-4">
+                                      <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">
+                                        Mouza Name
+                                      </label>
+                                      <input 
+                                        type="text"
+                                        placeholder="e.g. Mouza Alipur"
+                                        value={m.name}
+                                        onChange={(e) => handleUpdateMouzaField(mIdx, 'name', e.target.value)}
+                                        className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                      />
+                                    </div>
+
+                                    {/* Years Range */}
+                                    <div className="md:col-span-2">
+                                      <label className="block text-[10px] font-bold text-slate-455 uppercase tracking-widest mb-1.5">
+                                        Register Years Range
+                                      </label>
+                                      <input 
+                                        type="text"
+                                        placeholder="e.g. 2002 - 2003"
+                                        value={m.years}
+                                        onChange={(e) => handleUpdateMouzaField(mIdx, 'years', e.target.value)}
+                                        className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono"
+                                      />
+                                    </div>
+
+                                    {/* Register Type */}
+                                    <div className="md:col-span-2">
+                                      <label className="block text-[10px] font-bold text-slate-460 uppercase tracking-widest mb-1.5">
+                                        Register Type
+                                      </label>
+                                      <select
+                                        value={m.type}
+                                        onChange={(e) => handleUpdateMouzaField(mIdx, 'type', e.target.value as any)}
+                                        className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                      >
+                                        <option value="RHZ">RHZ</option>
+                                        <option value="Mutation">Mutation</option>
+                                        <option value="Shajra">Shajra</option>
+                                      </select>
+                                    </div>
+
+                                    {/* Register Quantity */}
+                                    <div className="md:col-span-1 border-r border-slate-100 pr-2">
+                                      <label className="block text-[10px] font-bold text-slate-465 uppercase tracking-widest mb-1.5">
+                                        Quantity
+                                      </label>
+                                      <input 
+                                        type="number"
+                                        min="1"
+                                        placeholder="1"
+                                        value={m.quantity || 1}
+                                        onChange={(e) => handleUpdateMouzaField(mIdx, 'quantity', parseInt(e.target.value) || 1)}
+                                        className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono text-center"
+                                      />
+                                    </div>
+
+                                    {/* Status selection - custom elegant radio buttons */}
+                                    <div className="md:col-span-3">
+                                      <label className="block text-[10px] font-bold text-slate-470 uppercase tracking-widest mb-1.5">
+                                        Scanning Status
+                                      </label>
+                                      <div className="flex gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUpdateMouzaField(mIdx, 'status', 'In Scanning')}
+                                          className={cn(
+                                            "flex-1 py-1.5 px-3 rounded-lg border text-xs font-bold transition-all",
+                                            m.status === 'In Scanning'
+                                              ? "bg-amber-50 text-amber-700 border-amber-200 shadow-sm"
+                                              : "bg-slate-50 border-slate-100 text-slate-400 hover:text-slate-600"
+                                          )}
+                                        >
+                                          Scanning
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUpdateMouzaField(mIdx, 'status', 'Complete')}
+                                          className={cn(
+                                            "flex-1 py-1.5 px-3 rounded-lg border text-xs font-bold transition-all",
+                                            m.status === 'Complete'
+                                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm"
+                                              : "bg-slate-50 border-slate-100 text-slate-400 hover:text-slate-600"
+                                          )}
+                                        >
+                                          Complete
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Action buttons footer for wizard */}
+                        <div className="border-t border-slate-100 pt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div className="flex items-center gap-1.5 text-xs text-slate-400 font-bold">
+                            <span>Operator:</span>
+                            <span className="text-slate-600 font-extrabold">{selectedOperatorIndex + 1}</span>
+                            <span>of</span>
+                            <span className="text-slate-600 font-extrabold">{adminData.length}</span>
+                          </div>
+                          
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const ok = await saveAdminData();
+                                if (ok) {
+                                  // Just show inline saved indicator
+                                }
+                              }}
+                              disabled={isSaving}
+                              className="bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 px-5 h-10 rounded-xl text-xs font-bold flex items-center gap-2 transition-all"
+                            >
+                              <Save className="w-4 h-4 text-slate-400" />
+                              Save Current Progress
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleSaveAndNextOperator}
+                              disabled={isSaving}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 h-10 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-md shadow-indigo-100"
+                            >
+                              {selectedOperatorIndex === adminData.length - 1 ? (
+                                <>
+                                  {isSaving ? 'Finishing...' : 'Save & Finish'}
+                                  <Check className="w-4 h-4" />
+                                </>
+                              ) : (
+                                <>
+                                  {isSaving ? 'Saving...' : 'Save & Next Operator'}
+                                  <ChevronRight className="w-4 h-4" />
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Card>
+            </motion.div>
+          ) : view === 'mouza-details' ? (
+            <motion.div 
+              key="mouza-details"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-8"
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                    <Globe className="w-8 h-8 text-indigo-600" />
+                    Mouza Registry Details
+                  </h2>
+                  <p className="text-slate-500 font-medium text-sm mt-1">Detailed year-wise records of RHZ, Mutation, and Shajra registers scanned for each Mouza</p>
+                </div>
+              </div>
+
+              {/* Filters & Search Card */}
+              <Card className="p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="relative w-full md:max-w-md">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search Mouza by name..."
+                    value={mouzaSearch}
+                    onChange={(e) => setMouzaSearch(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+                <div className="text-xs text-slate-400 font-bold flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-650" />
+                  <span>Total Unique Mouzas: {mouzasData.length}</span>
                 </div>
               </Card>
+
+              {mouzasLoading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="animate-pulse bg-white border border-slate-150 rounded-2xl p-6 space-y-4">
+                      <div className="h-6 bg-slate-200 rounded-lg w-1/3" />
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="h-20 bg-slate-100 rounded-xl" />
+                        <div className="h-20 bg-slate-100 rounded-xl" />
+                        <div className="h-20 bg-slate-100 rounded-xl" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : mouzasData.length === 0 ? (
+                <div className="bg-white border border-slate-150 rounded-2xl p-12 text-center">
+                  <Globe className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                  <h4 className="text-base font-bold text-slate-705 text-slate-700">No Mouzas Scanned</h4>
+                  <p className="text-slate-400 text-xs mt-1 max-w-sm mx-auto">No custom Mouzas or registers scanning data have been saved yet for this Site.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {mouzasData
+                    .filter(m => !mouzaSearch || m.name.toLowerCase().includes(mouzaSearch.toLowerCase()))
+                    .map((mouza) => {
+                      const totalQty = (mouza.RHZ || []).reduce((s: number, r: any) => s + (r.quantity || 1), 0) +
+                                       (mouza.Mutation || []).reduce((s: number, r: any) => s + (r.quantity || 1), 0) +
+                                       (mouza.Shajra || []).reduce((s: number, r: any) => s + (r.quantity || 1), 0);
+
+                      return (
+                        <div 
+                          key={mouza.name}
+                          className="bg-white border border-slate-100 hover:border-indigo-100/80 rounded-2xl p-6 shadow-sm hover:shadow transition-all group flex flex-col justify-between"
+                        >
+                          <div>
+                            {/* Mouza Title Header */}
+                            <div className="flex items-start justify-between gap-3 mb-5">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100/50">
+                                  <Map className="w-4.5 h-4.5" />
+                                </div>
+                                <h3 className="text-base font-bold text-slate-800 tracking-tight group-hover:text-indigo-900 transition-colors">
+                                  {mouza.name}
+                                </h3>
+                              </div>
+                              <span className="bg-slate-50 text-slate-500 border border-slate-200 text-[10px] uppercase font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
+                                <Layers className="w-3 h-3 text-slate-400" />
+                                <span>{totalQty} registers</span>
+                              </span>
+                            </div>
+
+                            {/* 3 Column Sub-layout for RHZ, Mutation, Shajra */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                              {/* RHZ Column */}
+                              <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 flex flex-col">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 border-b border-slate-100 pb-1.5 text-center">RHZ</span>
+                                {(!mouza.RHZ || mouza.RHZ.length === 0) ? (
+                                  <span className="text-[11px] text-slate-400 italic text-center block my-auto py-2">No records</span>
+                                ) : (
+                                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                                    {mouza.RHZ.map((r: any, idx: number) => (
+                                      <div key={idx} className="bg-white p-2 rounded-lg border border-slate-200/60 shadow-sm">
+                                        <div className="flex items-center justify-between text-[11px]">
+                                          <span className="font-bold text-slate-700 font-mono">{r.years}</span>
+                                          <span className={cn(
+                                            "font-extrabold text-[9px] px-1 py-0.2 rounded-sm",
+                                            r.status === 'Complete' 
+                                              ? "bg-emerald-50 text-emerald-700" 
+                                              : "bg-amber-50 text-amber-700 font-extrabold"
+                                          )}>
+                                            Q:{r.quantity || 1}
+                                          </span>
+                                        </div>
+                                        <div className="flex flex-col mt-1 text-[9px] text-slate-400 leading-tight">
+                                          <span>By: {r.operator}</span>
+                                          <span className="font-mono text-[8px]">{r.date}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Mutation Column */}
+                              <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 flex flex-col">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 border-b border-slate-100 pb-1.5 text-center font-semibold">Mutation</span>
+                                {(!mouza.Mutation || mouza.Mutation.length === 0) ? (
+                                  <span className="text-[11px] text-slate-400 italic text-center block my-auto py-2">No records</span>
+                                ) : (
+                                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                                    {mouza.Mutation.map((r: any, idx: number) => (
+                                      <div key={idx} className="bg-white p-2 rounded-lg border border-slate-200/60 shadow-sm">
+                                        <div className="flex items-center justify-between text-[11px]">
+                                          <span className="font-bold text-slate-700 font-mono">{r.years}</span>
+                                          <span className={cn(
+                                            "font-extrabold text-[9px] px-1 py-0.2 rounded-sm",
+                                            r.status === 'Complete' 
+                                              ? "bg-emerald-50 text-emerald-700" 
+                                              : "bg-amber-50 text-amber-700 font-extrabold"
+                                          )}>
+                                            Q:{r.quantity || 1}
+                                          </span>
+                                        </div>
+                                        <div className="flex flex-col mt-1 text-[9px] text-slate-400 leading-tight">
+                                          <span>By: {r.operator}</span>
+                                          <span className="font-mono text-[8px]">{r.date}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Shajra Column */}
+                              <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 flex flex-col">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 border-b border-slate-100 pb-1.5 text-center font-semibold">Shajra</span>
+                                {(!mouza.Shajra || mouza.Shajra.length === 0) ? (
+                                  <span className="text-[11px] text-slate-400 italic text-center block my-auto py-2">No records</span>
+                                ) : (
+                                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                                    {mouza.Shajra.map((r: any, idx: number) => (
+                                      <div key={idx} className="bg-white p-2 rounded-lg border border-slate-200/60 shadow-sm">
+                                        <div className="flex items-center justify-between text-[11px]">
+                                          <span className="font-bold text-slate-700 font-mono">{r.years}</span>
+                                          <span className={cn(
+                                            "font-extrabold text-[9px] px-1 py-0.2 rounded-sm",
+                                            r.status === 'Complete' 
+                                              ? "bg-emerald-50 text-emerald-700" 
+                                              : "bg-amber-50 text-amber-700 font-extrabold"
+                                          )}>
+                                            Q:{r.quantity || 1}
+                                          </span>
+                                        </div>
+                                        <div className="flex flex-col mt-1 text-[9px] text-slate-400 leading-tight">
+                                          <span>By: {r.operator}</span>
+                                          <span className="font-mono text-[8px]">{r.date}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
             </motion.div>
           ) : view === 'admin-reports' && hasPermission('admin-reports') ? (
             <motion.div 
