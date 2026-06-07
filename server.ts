@@ -1415,6 +1415,39 @@ async function startServer() {
     }
   });
 
+  app.get("/api/scanning-data/last-mouzas", requireAuth, async (req: any, res) => {
+    const { employeeId, date } = req.query;
+    if (!employeeId) {
+      return res.status(400).json({ error: "employeeId query param is required" });
+    }
+    try {
+      const snapshot = await db.collection('scanning_data')
+        .where('employee_id', '==', employeeId)
+        .orderBy('date', 'desc')
+        .get();
+
+      for (const doc of snapshot.docs) {
+        const d = doc.data();
+        if (date && d.date >= String(date)) continue;
+        if (Array.isArray(d.mouzas) && d.mouzas.length > 0) {
+          const cleanMouzas = d.mouzas.map((m: any) => ({
+            name: m.name || '',
+            status: m.status || 'In Scanning',
+            years: m.years || '',
+            type: m.type || 'RHZ',
+            quantity: m.quantity ?? 1
+          }));
+          return res.json({ mouzas: cleanMouzas, sourceDate: d.date });
+        }
+      }
+
+      res.json({ mouzas: [], message: "No previous Mouzas found" });
+    } catch (err) {
+      console.error('[LAST_MOUZAS] Fetch error:', err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.get("/api/mouzas", requireAuth, async (req: any, res) => {
     const { siteId } = req.query;
     if (!siteId || !checkSiteAccess(req.user, siteId as string, 'main-view')) {

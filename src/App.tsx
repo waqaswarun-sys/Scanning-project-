@@ -145,6 +145,7 @@ export default function App() {
   const [mouzasData, setMouzasData] = useState<any[]>([]);
   const [mouzasLoading, setMouzasLoading] = useState(false);
   const [mouzaSearch, setMouzaSearch] = useState('');
+  const [selectedMouzaFilter, setSelectedMouzaFilter] = useState('all');
 
   // Wizard Data Entry State
   const [selectedOperatorIndex, setSelectedOperatorIndex] = useState<number>(0);
@@ -527,6 +528,7 @@ export default function App() {
   const fetchMouzasData = async () => {
     if (!selectedSiteId) return;
     setMouzasLoading(true);
+    setSelectedMouzaFilter('all');
     try {
       const res = await apiFetch(`/api/mouzas?siteId=${selectedSiteId}`);
       if (res.ok) {
@@ -559,6 +561,64 @@ export default function App() {
     setAdminData(prev => prev.map(item => 
       item.employee_id === employeeId ? { ...item, [field]: numValue } : item
     ));
+  };
+
+  const [isCopyingLastMouzas, setIsCopyingLastMouzas] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  const handlePicLastMouzas = async () => {
+    const operator = adminData[selectedOperatorIndex];
+    if (!operator) return;
+    setIsCopyingLastMouzas(true);
+    setCopyFeedback(null);
+    try {
+      const res = await apiFetch(`/api/scanning-data/last-mouzas?employeeId=${operator.employee_id}&date=${adminDate}`);
+      if (res.ok) {
+        const result = await res.json();
+        if (result.mouzas && result.mouzas.length > 0) {
+          setAdminData(prev => prev.map((item, idx) => {
+            if (idx === selectedOperatorIndex) {
+              const sumOfQuantities = result.mouzas.reduce((sum: number, curr: any) => sum + (parseInt(curr.quantity as any) || 0), 0);
+              return {
+                ...item,
+                mouzas: result.mouzas,
+                files: sumOfQuantities
+              };
+            }
+            return item;
+          }));
+          setCopyFeedback(`Successfully copied Mouzas from ${result.sourceDate}!`);
+          setTimeout(() => setCopyFeedback(null), 4000);
+        } else {
+          setCopyFeedback("No previous Mouzas found for this operator.");
+          setTimeout(() => setCopyFeedback(null), 4000);
+        }
+      } else {
+        setCopyFeedback("Failed to fetch last Mouzas.");
+        setTimeout(() => setCopyFeedback(null), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+      setCopyFeedback("Error copying last Mouzas.");
+      setTimeout(() => setCopyFeedback(null), 4000);
+    } finally {
+      setIsCopyingLastMouzas(false);
+    }
+  };
+
+  const handleUpdateMouzaGroupStatus = (indices: number[], status: 'In Scanning' | 'Complete') => {
+    setAdminData(prev => prev.map((item, idx) => {
+      if (idx === selectedOperatorIndex) {
+        const updated = (item.mouzas || []).map((m, mIdx) => {
+          if (indices.includes(mIdx)) {
+            return { ...m, status };
+          }
+          return m;
+        });
+        return { ...item, mouzas: updated };
+      }
+      return item;
+    }));
   };
 
   const handleAddMouzaToCurrentOperator = () => {
@@ -1883,14 +1943,36 @@ export default function App() {
                               </h5>
                               <p className="text-[11px] text-slate-400 mt-1">Specify which Mouzas and Register Types (multiple years option allowed) were processed by this operator</p>
                             </div>
-                            <button
-                              type="button"
-                              onClick={handleAddMouzaToCurrentOperator}
-                              className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-indigo-100"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              Add New Mouza
-                            </button>
+                            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
+                              {copyFeedback && (
+                                <span className={cn(
+                                  "text-xs font-bold px-2.5 py-1 rounded-lg border",
+                                  copyFeedback.startsWith("Success")
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                                    : "bg-slate-550 bg-amber-50 text-amber-700 border-amber-100"
+                                )}>
+                                  {copyFeedback}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={handlePicLastMouzas}
+                                disabled={isCopyingLastMouzas}
+                                className="bg-slate-150 text-slate-700 hover:bg-slate-200 disabled:opacity-50 px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-250 shrink-0"
+                                title="Pick the last scanned Mouza structure, names and record types processed by this operator"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                                {isCopyingLastMouzas ? "Copying..." : "Pic Last Mouzas"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleAddMouzaToCurrentOperator}
+                                className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-indigo-100 shrink-0"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                Add New Mouza
+                              </button>
+                            </div>
                           </div>
 
                           {(() => {
@@ -1927,19 +2009,55 @@ export default function App() {
                                       key={gIdx} 
                                       className="bg-white border border-slate-200 rounded-2xl p-5 relative shadow-sm hover:shadow transition-shadow"
                                     >
-                                      {/* Group Header: Mouza Name Input & Actions */}
-                                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-100">
-                                        <div className="flex items-center gap-2 w-full sm:max-w-md">
-                                          <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100 shrink-0">
-                                            <Map className="w-4 h-4" />
+                                      {/* Group Header: Mouza Name Input & Actions & Mouza-level Status */}
+                                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 mb-4 border-b border-slate-100">
+                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:max-w-xl">
+                                          <div className="flex items-center gap-2 w-full sm:max-w-xs">
+                                            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100 shrink-0">
+                                              <Map className="w-4 h-4" />
+                                            </div>
+                                            <input 
+                                              type="text"
+                                              placeholder="Enter Mouza Name..."
+                                              value={group.name}
+                                              onChange={(e) => handleRenameMouzaGroup(group.indices, e.target.value)}
+                                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                            />
                                           </div>
-                                          <input 
-                                            type="text"
-                                            placeholder="Enter Mouza Name..."
-                                            value={group.name}
-                                            onChange={(e) => handleRenameMouzaGroup(group.indices, e.target.value)}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                                          />
+
+                                          {/* Consolidated Mouza-Level Status Selection */}
+                                          {(() => {
+                                            const isGroupComplete = group.entries.length > 0 && group.entries.every(e => e.record.status === 'Complete');
+                                            return (
+                                              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 p-1 rounded-xl shrink-0">
+                                                <span className="text-[9px] uppercase font-black text-slate-400 px-2 tracking-wider">Mouza Status:</span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleUpdateMouzaGroupStatus(group.indices, 'In Scanning')}
+                                                  className={cn(
+                                                    "py-1 px-3 rounded-lg text-xs font-bold transition-all",
+                                                    !isGroupComplete
+                                                      ? "bg-amber-50 text-amber-700 border border-amber-200/40 shadow-xs font-black"
+                                                      : "bg-transparent text-slate-400 hover:text-slate-600"
+                                                  )}
+                                                >
+                                                  Scanning
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleUpdateMouzaGroupStatus(group.indices, 'Complete')}
+                                                  className={cn(
+                                                    "py-1 px-3 rounded-lg text-xs font-bold transition-all",
+                                                    isGroupComplete
+                                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200/40 shadow-xs font-black"
+                                                      : "bg-transparent text-slate-400 hover:text-slate-600"
+                                                  )}
+                                                >
+                                                  Complete
+                                                </button>
+                                              </div>
+                                            );
+                                          })()}
                                         </div>
 
                                         <div className="flex items-center gap-2 shrink-0">
@@ -1983,7 +2101,7 @@ export default function App() {
                                             </button>
 
                                             {/* Register Type */}
-                                            <div className="md:col-span-3">
+                                            <div className="md:col-span-5">
                                               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                                                 Register Type
                                               </label>
@@ -1999,7 +2117,7 @@ export default function App() {
                                             </div>
 
                                             {/* Register Years Range */}
-                                            <div className="md:col-span-3">
+                                            <div className="md:col-span-4">
                                               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                                                 Years Range (e.g. 1999-2000)
                                               </label>
@@ -2013,7 +2131,7 @@ export default function App() {
                                             </div>
 
                                             {/* Quantity */}
-                                            <div className="md:col-span-2">
+                                            <div className="md:col-span-3">
                                               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 text-center font-semibold">
                                                 Qty (Registers)
                                               </label>
@@ -2033,39 +2151,6 @@ export default function App() {
                                                 }}
                                                 className="w-full bg-white border border-slate-250 rounded-lg px-2 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/10 font-mono text-center"
                                               />
-                                            </div>
-
-                                            {/* Status selection */}
-                                            <div className="md:col-span-4">
-                                              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                                                Scanning Status
-                                              </label>
-                                              <div className="flex gap-1.5">
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleUpdateMouzaField(originalIndex, 'status', 'In Scanning')}
-                                                  className={cn(
-                                                    "flex-1 py-1.5 px-2.5 rounded-lg border text-xs font-bold transition-all",
-                                                    m.status === 'In Scanning'
-                                                      ? "bg-amber-50 text-amber-700 border-amber-200 shadow-sm"
-                                                      : "bg-white border-slate-200 text-slate-400 hover:text-slate-600"
-                                                  )}
-                                                >
-                                                  Scanning
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleUpdateMouzaField(originalIndex, 'status', 'Complete')}
-                                                  className={cn(
-                                                    "flex-1 py-1.5 px-2.5 rounded-lg border text-xs font-bold transition-all",
-                                                    m.status === 'Complete'
-                                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm"
-                                                      : "bg-white border-slate-200 text-slate-400 hover:text-slate-600"
-                                                  )}
-                                                >
-                                                  Complete
-                                                </button>
-                                              </div>
                                             </div>
                                           </div>
                                         ))}
@@ -2149,24 +2234,23 @@ export default function App() {
 
               {/* Global Mouza Stats Summary Cards */}
               {(() => {
-                let globalTotalRegisters = 0;
-                let globalCompleteRegisters = 0;
-                let globalInScanningRegisters = 0;
+                let globalTotalRHZ = 0;
+                let globalTotalMutation = 0;
+                let globalTotalShajra = 0;
 
                 mouzasData.forEach(m => {
                   const RHZList = m.RHZ || [];
                   const MutationList = m.Mutation || [];
                   const ShajraList = m.Shajra || [];
-                  const all = [...RHZList, ...MutationList, ...ShajraList];
                   
-                  all.forEach((r: any) => {
-                    const qty = r.quantity || 1;
-                    globalTotalRegisters += qty;
-                    if (r.status === 'Complete') {
-                      globalCompleteRegisters += qty;
-                    } else {
-                      globalInScanningRegisters += qty;
-                    }
+                  RHZList.forEach((r: any) => {
+                    globalTotalRHZ += (Number(r.quantity) || 1);
+                  });
+                  MutationList.forEach((r: any) => {
+                    globalTotalMutation += (Number(r.quantity) || 1);
+                  });
+                  ShajraList.forEach((r: any) => {
+                    globalTotalShajra += (Number(r.quantity) || 1);
                   });
                 });
 
@@ -2183,60 +2267,91 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Total Registers */}
+                    {/* Total RHZ */}
                     <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow transition-shadow">
                       <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100/50">
                         <Layers className="w-5.5 h-5.5 text-blue-600" />
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Total Registers</span>
-                        <span className="text-2xl font-black text-slate-800 font-mono leading-none block mt-1.5">{globalTotalRegisters}</span>
+                        <span className="text-[10px] text-blue-600 font-bold uppercase tracking-wider block">Total RHZ</span>
+                        <span className="text-2xl font-black text-slate-800 font-mono leading-none block mt-1.5">{globalTotalRHZ}</span>
                       </div>
                     </div>
 
-                    {/* Completed Registers */}
+                    {/* Total Mutation */}
+                    <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow transition-shadow">
+                      <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-100/50">
+                        <FileText className="w-5.5 h-5.5 text-amber-600" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-amber-600 font-bold uppercase tracking-wider block">Total Mutation</span>
+                        <span className="text-2xl font-black text-slate-800 font-mono leading-none block mt-1.5">{globalTotalMutation}</span>
+                      </div>
+                    </div>
+
+                    {/* Total Shajra */}
                     <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow transition-shadow">
                       <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100/50">
-                        <Check className="w-5.5 h-5.5" />
+                        <Globe className="w-5.5 h-5.5 text-emerald-600" />
                       </div>
                       <div>
-                        <span className="text-[10px] text-emerald-600 font-extrabold uppercase tracking-wider block">Completed</span>
-                        <span className="text-2xl font-black text-emerald-700 font-mono leading-none block mt-1.5">{globalCompleteRegisters}</span>
-                      </div>
-                    </div>
-
-                    {/* In Scanning Registers */}
-                    <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow transition-shadow">
-                      <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center shrink-0 border border-amber-100/50">
-                        <span className="relative flex h-3 w-3">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-amber-550 font-extrabold uppercase tracking-wider block">In Scanning</span>
-                        <span className="text-2xl font-black text-amber-700 font-mono leading-none block mt-1.5">{globalInScanningRegisters}</span>
+                        <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">Total Shajra</span>
+                        <span className="text-2xl font-black text-slate-800 font-mono leading-none block mt-1.5">{globalTotalShajra}</span>
                       </div>
                     </div>
                   </div>
                 );
               })()}
 
-              {/* Filters & Search Card */}
-              <Card className="p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-                <div className="relative w-full md:max-w-md">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search Mouza by name..."
-                    value={mouzaSearch}
-                    onChange={(e) => setMouzaSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                  />
+              {/* Filters & Search Card with Top Mouza Selector Dropdown */}
+              <Card className="p-5 flex flex-col md:flex-row items-center justify-between gap-4 bg-white border border-slate-200 rounded-2xl">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:max-w-2xl">
+                  {/* Select Mouza Dropdown Column */}
+                  <div className="relative shrink-0 sm:w-64">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 pl-1">
+                      Choose Mouza to View
+                    </label>
+                    <select
+                      value={selectedMouzaFilter}
+                      onChange={(e) => setSelectedMouzaFilter(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 appearance-none cursor-pointer"
+                    >
+                      <option value="all">📁 All Mouzas (View All)</option>
+                      {mouzasData.map((m) => (
+                        <option key={m.name} value={m.name}>
+                          🗺️ {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Search Input Column */}
+                  <div className="w-full">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 pl-1">
+                      Search Mouza Name
+                    </label>
+                    <div className="relative">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search Mouza by name..."
+                        value={mouzaSearch}
+                        onChange={(e) => setMouzaSearch(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="text-xs text-slate-400 font-bold flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-600" />
-                  <span>Showing filtered unique Mouzas: {mouzasData.filter(m => !mouzaSearch || m.name.toLowerCase().includes(mouzaSearch.toLowerCase())).length} of {mouzasData.length}</span>
+
+                <div className="text-xs text-slate-400 font-bold flex items-center gap-2 bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-100 self-end sm:self-center">
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse" />
+                  <span>
+                    Showing filtered: {mouzasData.filter(m => {
+                      if (selectedMouzaFilter !== 'all' && m.name !== selectedMouzaFilter) return false;
+                      if (mouzaSearch && !m.name.toLowerCase().includes(mouzaSearch.toLowerCase())) return false;
+                      return true;
+                    }).length} of {mouzasData.length}
+                  </span>
                 </div>
               </Card>
 
@@ -2262,16 +2377,23 @@ export default function App() {
               ) : (
                 <div className="grid grid-cols-1 gap-8">
                   {mouzasData
-                    .filter(m => !mouzaSearch || m.name.toLowerCase().includes(mouzaSearch.toLowerCase()))
+                    .filter(m => {
+                      if (selectedMouzaFilter !== 'all' && m.name !== selectedMouzaFilter) return false;
+                      if (mouzaSearch && !m.name.toLowerCase().includes(mouzaSearch.toLowerCase())) return false;
+                      return true;
+                    })
                     .map((mouza) => {
                       const RHZList = mouza.RHZ || [];
                       const MutationList = mouza.Mutation || [];
                       const ShajraList = mouza.Shajra || [];
                       const allRegs = [...RHZList, ...MutationList, ...ShajraList];
 
-                      const totalQty = allRegs.reduce((s: number, r: any) => s + (r.quantity || 1), 0);
-                      const completeQty = allRegs.filter((r: any) => r.status === 'Complete').reduce((s: number, r: any) => s + (r.quantity || 1), 0);
-                      const inScanningQty = allRegs.filter((r: any) => r.status === 'In Scanning' || r.status !== 'Complete').reduce((s: number, r: any) => s + (r.quantity || 1), 0);
+                      const totalRHZQty = RHZList.reduce((s: number, r: any) => s + (Number(r.quantity) || 0), 0);
+                      const totalMutationQty = MutationList.reduce((s: number, r: any) => s + (Number(r.quantity) || 0), 0);
+                      const totalShajraQty = ShajraList.reduce((s: number, r: any) => s + (Number(r.quantity) || 0), 0);
+                      const totalQty = totalRHZQty + totalMutationQty + totalShajraQty;
+
+                      const isComplete = allRegs.length > 0 && allRegs.every((r: any) => r.status === 'Complete');
 
                       // Extract and sort all unique years
                       const allYearsSet = new Set<string>();
@@ -2289,17 +2411,28 @@ export default function App() {
                           className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all group duration-300"
                         >
                           <div>
-                            {/* Mouza Title Header */}
+                            {/* Mouza Title Header with Consolidated Status Badge next to its name */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100">
                               <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100/50">
                                   <Map className="w-5 h-5" />
                                 </div>
-                                <div>
+                                <div className="flex items-center gap-2.5">
                                   <h3 className="text-lg font-black text-slate-800 tracking-tight group-hover:text-indigo-900 transition-colors">
                                     {mouza.name}
                                   </h3>
-                                  <p className="text-slate-400 text-xs font-semibold">Consolidated scan logs for this Mouza registry</p>
+                                  <span className={cn(
+                                    "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold inline-flex items-center gap-1 border shadow-2xs",
+                                    isComplete
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-150" 
+                                      : "bg-amber-50 text-amber-700 border-amber-150"
+                                  )}>
+                                    <span className={cn(
+                                      "w-1.5 h-1.5 rounded-full",
+                                      isComplete ? "bg-emerald-500" : "bg-amber-550 animate-pulse"
+                                    )} />
+                                    {isComplete ? 'Complete' : 'Scanning'}
+                                  </span>
                                 </div>
                               </div>
                               <span className="bg-indigo-50/80 text-indigo-700 border border-indigo-105/40 text-[10px] uppercase font-extrabold px-3 py-1 rounded-xl flex items-center gap-1.5 self-start sm:self-center">
@@ -2308,29 +2441,27 @@ export default function App() {
                               </span>
                             </div>
 
-                            {/* Complete and In Scanning Numbers Sub-bar */}
+                            {/* Complete and In Scanning Numbers Sub-bar renamed to represent Shajra, Mutation and RHZ */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 mt-2 bg-slate-50/80 p-4 rounded-2xl border border-slate-100">
                               <div className="text-center sm:text-left sm:pl-4">
                                 <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block leading-none">Total Registers</span>
                                 <span className="text-xl font-black text-slate-800 font-mono mt-1.5 block">{totalQty}</span>
                               </div>
                               <div className="border-l border-slate-200 text-center sm:text-left sm:pl-4">
-                                <span className="text-[10px] text-emerald-600 font-extrabold uppercase tracking-widest block leading-none">Completed Registers</span>
-                                <span className="text-xl font-black text-emerald-700 font-mono mt-1.5 block">Q: {completeQty}</span>
+                                <span className="text-[10px] text-emerald-600 font-extrabold uppercase tracking-widest block leading-none">Total RHZ</span>
+                                <span className="text-xl font-black text-emerald-700 font-mono mt-1.5 block">Q: {totalRHZQty}</span>
                               </div>
                               <div className="border-l border-slate-200 text-center sm:text-left sm:pl-4">
-                                <span className="text-[10px] text-amber-500 font-extrabold uppercase tracking-widest block leading-none">In Scanning Registers</span>
-                                <span className="text-xl font-black text-amber-700 font-mono mt-1.5 block">Q: {inScanningQty}</span>
+                                <span className="text-[10px] text-amber-500 font-extrabold uppercase tracking-widest block leading-none">Total Mutation</span>
+                                <span className="text-xl font-black text-amber-700 font-mono mt-1.5 block">Q: {totalMutationQty}</span>
                               </div>
                               <div className="border-l border-slate-200 text-center sm:text-left sm:pl-4">
-                                <span className="text-[10px] text-indigo-550 font-extrabold uppercase tracking-widest block leading-none">Completion Rate</span>
-                                <span className="text-xl font-black text-indigo-755 font-mono mt-1.5 block">
-                                  {totalQty > 0 ? Math.round((completeQty / totalQty) * 100) : 0}%
-                                </span>
+                                <span className="text-[10px] text-indigo-550 font-extrabold uppercase tracking-widest block leading-none">Total Shajra</span>
+                                <span className="text-xl font-black text-indigo-755 font-mono mt-1.5 block">Q: {totalShajraQty}</span>
                               </div>
                             </div>
 
-                            {/* Consolidated Aligned Table */}
+                            {/* Consolidated Aligned Table showing just numbers, no operator details or Scanning status */}
                             {sortedYears.length === 0 ? (
                               <div className="text-center py-6 text-xs text-slate-400 font-bold bg-slate-50 border border-dashed border-slate-200 rounded-xl">
                                 No records of registry types defined yet.
@@ -2357,83 +2488,35 @@ export default function App() {
                                       return (
                                         <tr key={year} className="hover:bg-slate-50/30 transition-colors">
                                           <td className="py-4 px-4 text-sm font-extrabold text-slate-800 font-mono text-left pl-6">{year}</td>
-                                          <td className="py-4 px-4 text-xs">
+                                          <td className="py-4 px-4 text-xs font-semibold">
                                             {rhzRec ? (
-                                              <div className="inline-flex flex-col gap-1 items-center">
-                                                <span className={cn(
-                                                  "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold inline-flex items-center gap-1 shadow-2xs border",
-                                                  rhzRec.status === 'Complete' 
-                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-150" 
-                                                    : "bg-amber-50 text-amber-700 border-amber-150"
-                                                )}>
-                                                  <span className={cn(
-                                                    "w-1.5 h-1.5 rounded-full",
-                                                    rhzRec.status === 'Complete' ? "bg-emerald-500" : "bg-amber-550 animate-pulse"
-                                                  )} />
-                                                  {rhzRec.status === 'Complete' ? 'Complete' : 'Scanning'}
-                                                </span>
-                                                <span className="text-[10px] text-slate-500 font-extrabold font-mono mt-0.5">Qty: {rhzRec.quantity || 1}</span>
-                                                <div className="text-[9px] text-slate-400 font-semibold space-y-0.2 select-none">
-                                                  <span>By: {rhzRec.operator}</span>
-                                                  <span className="font-mono text-[8px] block">({rhzRec.date})</span>
-                                                </div>
-                                              </div>
+                                              <span className="bg-slate-105/60 border border-slate-150 text-slate-700 px-3 py-1 rounded-lg font-mono font-bold text-sm">
+                                                {rhzRec.quantity || 1}
+                                              </span>
                                             ) : (
                                               <span className="text-slate-300 font-bold">-</span>
                                             )}
                                           </td>
-                                          <td className="py-4 px-4 text-xs">
+                                          <td className="py-4 px-4 text-xs font-semibold">
                                             {mutRec ? (
-                                              <div className="inline-flex flex-col gap-1 items-center">
-                                                <span className={cn(
-                                                  "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold inline-flex items-center gap-1 shadow-2xs border",
-                                                  mutRec.status === 'Complete' 
-                                                    ? "bg-emerald-50 text-emerald-700" 
-                                                    : "bg-amber-50 text-amber-700 border-amber-150"
-                                                )}>
-                                                  <span className={cn(
-                                                    "w-1.5 h-1.5 rounded-full",
-                                                    mutRec.status === 'Complete' ? "bg-emerald-500" : "bg-amber-550 animate-pulse"
-                                                  )} />
-                                                  {mutRec.status === 'Complete' ? 'Complete' : 'Scanning'}
-                                                </span>
-                                                <span className="text-[10px] text-slate-500 font-extrabold font-mono mt-0.5">Qty: {mutRec.quantity || 1}</span>
-                                                <div className="text-[9px] text-slate-400 font-semibold space-y-0.2 select-none">
-                                                  <span>By: {mutRec.operator}</span>
-                                                  <span className="font-mono text-[8px] block">({mutRec.date})</span>
-                                                </div>
-                                              </div>
+                                              <span className="bg-slate-105/60 border border-slate-150 text-slate-700 px-3 py-1 rounded-lg font-mono font-bold text-sm">
+                                                {mutRec.quantity || 1}
+                                              </span>
                                             ) : (
                                               <span className="text-slate-300 font-bold">-</span>
                                             )}
                                           </td>
-                                          <td className="py-4 px-4 text-xs">
+                                          <td className="py-4 px-4 text-xs font-semibold">
                                             {shajRec ? (
-                                              <div className="inline-flex flex-col gap-1 items-center">
-                                                <span className={cn(
-                                                  "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold inline-flex items-center gap-1 shadow-2xs border",
-                                                  shajRec.status === 'Complete' 
-                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-150" 
-                                                    : "bg-amber-50 text-amber-700 border-amber-150"
-                                                )}>
-                                                  <span className={cn(
-                                                    "w-1.5 h-1.5 rounded-full",
-                                                    shajRec.status === 'Complete' ? "bg-emerald-500" : "bg-amber-550 animate-pulse"
-                                                  )} />
-                                                  {shajRec.status === 'Complete' ? 'Complete' : 'Scanning'}
-                                                </span>
-                                                <span className="text-[10px] text-slate-500 font-extrabold font-mono mt-0.5">Qty: {shajRec.quantity || 1}</span>
-                                                <div className="text-[9px] text-slate-400 font-semibold space-y-0.2 select-none">
-                                                  <span>By: {shajRec.operator}</span>
-                                                  <span className="font-mono text-[8px] block">({shajRec.date})</span>
-                                                </div>
-                                              </div>
+                                              <span className="bg-slate-105/60 border border-slate-150 text-slate-700 px-3 py-1 rounded-lg font-mono font-bold text-sm">
+                                                {shajRec.quantity || 1}
+                                              </span>
                                             ) : (
                                               <span className="text-slate-300 font-bold">-</span>
                                             )}
                                           </td>
                                           <td className="py-4 px-4 text-sm font-black font-mono text-slate-700 text-right pr-6">
-                                            <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-xl border border-slate-200">
+                                            <span className="bg-indigo-50/50 text-indigo-700 px-3 py-1 rounded-xl border border-indigo-100">
                                               {rowTotal}
                                             </span>
                                           </td>
