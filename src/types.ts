@@ -15,7 +15,7 @@ export interface MouzaEntry {
   status: 'In Scanning' | 'Complete';
   years: string;
   type: 'RHZ' | 'Mutation' | 'Shajra';
-  quantity: number;
+  quantity: number | string;
 }
 
 export interface ScanningData {

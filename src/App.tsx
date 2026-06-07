@@ -565,18 +565,21 @@ export default function App() {
     setAdminData(prev => prev.map((item, idx) => {
       if (idx === selectedOperatorIndex) {
         const existingMouzas = item.mouzas || [];
+        const newMouzas = [
+          ...existingMouzas,
+          {
+            name: 'New Mouza',
+            status: 'In Scanning',
+            years: '',
+            type: 'RHZ',
+            quantity: 1
+          }
+        ];
+        const sumOfQuantities = newMouzas.reduce((sum, curr) => sum + (parseInt(curr.quantity as any) || 0), 0);
         return {
           ...item,
-          mouzas: [
-            ...existingMouzas,
-            {
-              name: 'New Mouza',
-              status: 'In Scanning',
-              years: '',
-              type: 'RHZ',
-              quantity: 1
-            }
-          ]
+          mouzas: newMouzas,
+          files: sumOfQuantities
         };
       }
       return item;
@@ -587,18 +590,21 @@ export default function App() {
     setAdminData(prev => prev.map((item, idx) => {
       if (idx === selectedOperatorIndex) {
         const existingMouzas = item.mouzas || [];
+        const newMouzas = [
+          ...existingMouzas,
+          {
+            name: mouzaName,
+            status: 'In Scanning',
+            years: '',
+            type: 'RHZ',
+            quantity: 1
+          }
+        ];
+        const sumOfQuantities = newMouzas.reduce((sum, curr) => sum + (parseInt(curr.quantity as any) || 0), 0);
         return {
           ...item,
-          mouzas: [
-            ...existingMouzas,
-            {
-              name: mouzaName,
-              status: 'In Scanning',
-              years: '',
-              type: 'RHZ',
-              quantity: 1
-            }
-          ]
+          mouzas: newMouzas,
+          files: sumOfQuantities
         };
       }
       return item;
@@ -629,7 +635,15 @@ export default function App() {
           }
           return m;
         });
-        return { ...item, mouzas: updatedMouzas };
+        
+        // Auto-sum whenever quantity is updated/modified
+        let updatedFiles = item.files;
+        if (field === 'quantity') {
+          const sumOfQuantities = updatedMouzas.reduce((sum, curr) => sum + (parseInt(curr.quantity as any) || 0), 0);
+          updatedFiles = sumOfQuantities;
+        }
+
+        return { ...item, mouzas: updatedMouzas, files: updatedFiles };
       }
       return item;
     }));
@@ -639,7 +653,9 @@ export default function App() {
     setAdminData(prev => prev.map((item, idx) => {
       if (idx === selectedOperatorIndex) {
         const updatedMouzas = (item.mouzas || []).filter((_, mIdx) => mIdx !== mouzaIdx);
-        return { ...item, mouzas: updatedMouzas };
+        // Auto-sum after removal
+        const sumOfQuantities = updatedMouzas.reduce((sum, curr) => sum + (parseInt(curr.quantity as any) || 0), 0);
+        return { ...item, mouzas: updatedMouzas, files: sumOfQuantities };
       }
       return item;
     }));
@@ -649,7 +665,9 @@ export default function App() {
     setAdminData(prev => prev.map((item, idx) => {
       if (idx === selectedOperatorIndex) {
         const updatedMouzas = (item.mouzas || []).filter((_, mIdx) => !indices.includes(mIdx));
-        return { ...item, mouzas: updatedMouzas };
+        // Auto-sum after removal
+        const sumOfQuantities = updatedMouzas.reduce((sum, curr) => sum + (parseInt(curr.quantity as any) || 0), 0);
+        return { ...item, mouzas: updatedMouzas, files: sumOfQuantities };
       }
       return item;
     }));
@@ -916,11 +934,13 @@ export default function App() {
   const touchStartY = React.useRef<number>(0);
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (view === 'admin-data-entry') return;
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    if (view === 'admin-data-entry') return;
     const deltaX = e.changedTouches[0].clientX - touchStartX.current;
     const deltaY = e.changedTouches[0].clientY - touchStartY.current;
     // Only swipe if horizontal movement > 80px and more horizontal than vertical
@@ -1901,7 +1921,7 @@ export default function App() {
                             return (
                               <div className="space-y-6">
                                 {groupedMouzas.map((group, gIdx) => {
-                                  const groupTotalQty = group.entries.reduce((sum, e) => sum + (e.record.quantity || 1), 0);
+                                  const groupTotalQty = group.entries.reduce((sum, e) => sum + (Number(e.record.quantity) || 0), 0);
                                   return (
                                     <div 
                                       key={gIdx} 
@@ -2001,8 +2021,16 @@ export default function App() {
                                                 type="number"
                                                 min="1"
                                                 placeholder="1"
-                                                value={m.quantity || 1}
-                                                onChange={(e) => handleUpdateMouzaField(originalIndex, 'quantity', parseInt(e.target.value) || 1)}
+                                                value={m.quantity === 0 ? '' : (m.quantity ?? '')}
+                                                onChange={(e) => {
+                                                  const val = e.target.value;
+                                                  if (val === '') {
+                                                    handleUpdateMouzaField(originalIndex, 'quantity', '');
+                                                  } else {
+                                                    const parsed = parseInt(val, 10);
+                                                    handleUpdateMouzaField(originalIndex, 'quantity', isNaN(parsed) ? '' : parsed);
+                                                  }
+                                                }}
                                                 className="w-full bg-white border border-slate-250 rounded-lg px-2 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/10 font-mono text-center"
                                               />
                                             </div>
