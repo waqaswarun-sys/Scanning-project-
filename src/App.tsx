@@ -570,7 +570,7 @@ export default function App() {
           mouzas: [
             ...existingMouzas,
             {
-              name: '',
+              name: 'New Mouza',
               status: 'In Scanning',
               years: '',
               type: 'RHZ',
@@ -578,6 +578,43 @@ export default function App() {
             }
           ]
         };
+      }
+      return item;
+    }));
+  };
+
+  const handleAddRowToMouzaGroup = (mouzaName: string) => {
+    setAdminData(prev => prev.map((item, idx) => {
+      if (idx === selectedOperatorIndex) {
+        const existingMouzas = item.mouzas || [];
+        return {
+          ...item,
+          mouzas: [
+            ...existingMouzas,
+            {
+              name: mouzaName,
+              status: 'In Scanning',
+              years: '',
+              type: 'RHZ',
+              quantity: 1
+            }
+          ]
+        };
+      }
+      return item;
+    }));
+  };
+
+  const handleRenameMouzaGroup = (indices: number[], newName: string) => {
+    setAdminData(prev => prev.map((item, idx) => {
+      if (idx === selectedOperatorIndex) {
+        const updated = (item.mouzas || []).map((m, mIdx) => {
+          if (indices.includes(mIdx)) {
+            return { ...m, name: newName };
+          }
+          return m;
+        });
+        return { ...item, mouzas: updated };
       }
       return item;
     }));
@@ -602,6 +639,16 @@ export default function App() {
     setAdminData(prev => prev.map((item, idx) => {
       if (idx === selectedOperatorIndex) {
         const updatedMouzas = (item.mouzas || []).filter((_, mIdx) => mIdx !== mouzaIdx);
+        return { ...item, mouzas: updatedMouzas };
+      }
+      return item;
+    }));
+  };
+
+  const handleRemoveMouzaGroup = (indices: number[]) => {
+    setAdminData(prev => prev.map((item, idx) => {
+      if (idx === selectedOperatorIndex) {
+        const updatedMouzas = (item.mouzas || []).filter((_, mIdx) => !indices.includes(mIdx));
         return { ...item, mouzas: updatedMouzas };
       }
       return item;
@@ -1814,7 +1861,7 @@ export default function App() {
                                 <Globe className="w-4 h-4 text-indigo-500" />
                                 Scanned Mouzas Details
                               </h5>
-                              <p className="text-[11px] text-slate-400 mt-1">Specify which Mouzas and Register Types were processed by this operator</p>
+                              <p className="text-[11px] text-slate-400 mt-1">Specify which Mouzas and Register Types (multiple years option allowed) were processed by this operator</p>
                             </div>
                             <button
                               type="button"
@@ -1822,128 +1869,185 @@ export default function App() {
                               className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-indigo-100"
                             >
                               <Plus className="w-3.5 h-3.5" />
-                              Add Mouza Name
+                              Add New Mouza
                             </button>
                           </div>
 
-                          {(!adminData[selectedOperatorIndex].mouzas || adminData[selectedOperatorIndex].mouzas.length === 0) ? (
-                            <div className="bg-white border border-dashed border-slate-200 rounded-xl p-8 text-center text-xs text-slate-400 font-medium">
-                              No Mouzas added yet for this operator. Click the "+ Add Mouza Name" button above to register a Mouza.
-                            </div>
-                          ) : (
-                            <div className="space-y-4">
-                              {adminData[selectedOperatorIndex].mouzas.map((m, mIdx) => (
-                                <div 
-                                  key={mIdx} 
-                                  className="bg-white border border-slate-100 rounded-xl p-4 flex flex-col gap-4 relative shadow-sm hover:shadow transition-shadow"
-                                >
-                                  {/* Delete trash button */}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveMouza(mIdx)}
-                                    className="absolute top-4 right-4 text-slate-400 hover:text-red-500 p-1 rounded-lg transition-colors"
-                                    title="Delete Mouza record"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
+                          {(() => {
+                            const rawMouzas = adminData[selectedOperatorIndex]?.mouzas || [];
+                            // Let's group rawMouzas by name, preserving their original order of appearance
+                            const groupedMouzas: Array<{ name: string; indices: number[]; entries: Array<{ originalIndex: number; record: MouzaEntry }> }> = [];
 
-                                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end pr-8">
-                                    {/* Mouza Name */}
-                                    <div className="md:col-span-4">
-                                      <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5">
-                                        Mouza Name
-                                      </label>
-                                      <input 
-                                        type="text"
-                                        placeholder="e.g. Mouza Alipur"
-                                        value={m.name}
-                                        onChange={(e) => handleUpdateMouzaField(mIdx, 'name', e.target.value)}
-                                        className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                                      />
-                                    </div>
+                            rawMouzas.forEach((record, originalIndex) => {
+                              const name = record.name || '';
+                              const trimmedLower = name.trim().toLowerCase();
+                              let group = groupedMouzas.find(g => g.name.trim().toLowerCase() === trimmedLower);
+                              if (!group) {
+                                group = { name, indices: [], entries: [] };
+                                groupedMouzas.push(group);
+                              }
+                              group.indices.push(originalIndex);
+                              group.entries.push({ originalIndex, record });
+                            });
 
-                                    {/* Years Range */}
-                                    <div className="md:col-span-2">
-                                      <label className="block text-[10px] font-bold text-slate-455 uppercase tracking-widest mb-1.5">
-                                        Register Years Range
-                                      </label>
-                                      <input 
-                                        type="text"
-                                        placeholder="e.g. 2002 - 2003"
-                                        value={m.years}
-                                        onChange={(e) => handleUpdateMouzaField(mIdx, 'years', e.target.value)}
-                                        className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono"
-                                      />
-                                    </div>
+                            if (groupedMouzas.length === 0) {
+                              return (
+                                <div className="bg-white border border-dashed border-slate-200 rounded-xl p-8 text-center text-xs text-slate-400 font-medium">
+                                  No Mouzas added yet for this operator. Click the "+ Add New Mouza" button above to register a Mouza.
+                                </div>
+                              );
+                            }
 
-                                    {/* Register Type */}
-                                    <div className="md:col-span-2">
-                                      <label className="block text-[10px] font-bold text-slate-460 uppercase tracking-widest mb-1.5">
-                                        Register Type
-                                      </label>
-                                      <select
-                                        value={m.type}
-                                        onChange={(e) => handleUpdateMouzaField(mIdx, 'type', e.target.value as any)}
-                                        className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                                      >
-                                        <option value="RHZ">RHZ</option>
-                                        <option value="Mutation">Mutation</option>
-                                        <option value="Shajra">Shajra</option>
-                                      </select>
-                                    </div>
+                            return (
+                              <div className="space-y-6">
+                                {groupedMouzas.map((group, gIdx) => {
+                                  const groupTotalQty = group.entries.reduce((sum, e) => sum + (e.record.quantity || 1), 0);
+                                  return (
+                                    <div 
+                                      key={gIdx} 
+                                      className="bg-white border border-slate-200 rounded-2xl p-5 relative shadow-sm hover:shadow transition-shadow"
+                                    >
+                                      {/* Group Header: Mouza Name Input & Actions */}
+                                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-100">
+                                        <div className="flex items-center gap-2 w-full sm:max-w-md">
+                                          <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100 shrink-0">
+                                            <Map className="w-4 h-4" />
+                                          </div>
+                                          <input 
+                                            type="text"
+                                            placeholder="Enter Mouza Name..."
+                                            value={group.name}
+                                            onChange={(e) => handleRenameMouzaGroup(group.indices, e.target.value)}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                          />
+                                        </div>
 
-                                    {/* Register Quantity */}
-                                    <div className="md:col-span-1 border-r border-slate-100 pr-2">
-                                      <label className="block text-[10px] font-bold text-slate-465 uppercase tracking-widest mb-1.5">
-                                        Quantity
-                                      </label>
-                                      <input 
-                                        type="number"
-                                        min="1"
-                                        placeholder="1"
-                                        value={m.quantity || 1}
-                                        onChange={(e) => handleUpdateMouzaField(mIdx, 'quantity', parseInt(e.target.value) || 1)}
-                                        className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono text-center"
-                                      />
-                                    </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleAddRowToMouzaGroup(group.name)}
+                                            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors border border-indigo-100"
+                                            title="Add extra years or register row for this Mouza"
+                                          >
+                                            <Plus className="w-3.5 h-3.5" />
+                                            Add Year / Type Register
+                                          </button>
+                                          
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRemoveMouzaGroup(group.indices)}
+                                            className="text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                                            title="Delete entire Mouza block and all its years records"
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </button>
+                                        </div>
+                                      </div>
 
-                                    {/* Status selection - custom elegant radio buttons */}
-                                    <div className="md:col-span-3">
-                                      <label className="block text-[10px] font-bold text-slate-470 uppercase tracking-widest mb-1.5">
-                                        Scanning Status
-                                      </label>
-                                      <div className="flex gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleUpdateMouzaField(mIdx, 'status', 'In Scanning')}
-                                          className={cn(
-                                            "flex-1 py-1.5 px-3 rounded-lg border text-xs font-bold transition-all",
-                                            m.status === 'In Scanning'
-                                              ? "bg-amber-50 text-amber-700 border-amber-200 shadow-sm"
-                                              : "bg-slate-50 border-slate-100 text-slate-400 hover:text-slate-600"
-                                          )}
-                                        >
-                                          Scanning
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleUpdateMouzaField(mIdx, 'status', 'Complete')}
-                                          className={cn(
-                                            "flex-1 py-1.5 px-3 rounded-lg border text-xs font-bold transition-all",
-                                            m.status === 'Complete'
-                                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm"
-                                              : "bg-slate-50 border-slate-100 text-slate-400 hover:text-slate-600"
-                                          )}
-                                        >
-                                          Complete
-                                        </button>
+                                      {/* List of Registry rows (multiple years, types) under this Mouza */}
+                                      <div className="space-y-4">
+                                        {group.entries.map(({ originalIndex, record: m }, rIdx) => (
+                                          <div 
+                                            key={originalIndex} 
+                                            className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-end bg-slate-50/50 border border-slate-100 p-4 rounded-xl relative pr-10"
+                                          >
+                                            {/* Delete single register row */}
+                                            <button
+                                              type="button"
+                                              onClick={() => handleRemoveMouza(originalIndex)}
+                                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 p-1.5 rounded-md hover:bg-slate-100/50 transition-all"
+                                              title="Delete this years record"
+                                              disabled={group.entries.length <= 1}
+                                            >
+                                              <X className="w-4 h-4" />
+                                            </button>
+
+                                            {/* Register Type */}
+                                            <div className="md:col-span-3">
+                                              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                                                Register Type
+                                              </label>
+                                              <select
+                                                value={m.type}
+                                                onChange={(e) => handleUpdateMouzaField(originalIndex, 'type', e.target.value as any)}
+                                                className="w-full bg-white border border-slate-250 rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/10"
+                                              >
+                                                <option value="RHZ">RHZ</option>
+                                                <option value="Mutation">Mutation</option>
+                                                <option value="Shajra">Shajra</option>
+                                              </select>
+                                            </div>
+
+                                            {/* Register Years Range */}
+                                            <div className="md:col-span-3">
+                                              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                                                Years Range (e.g. 1999-2000)
+                                              </label>
+                                              <input 
+                                                type="text"
+                                                placeholder="e.g. 2002 - 2003"
+                                                value={m.years}
+                                                onChange={(e) => handleUpdateMouzaField(originalIndex, 'years', e.target.value)}
+                                                className="w-full bg-white border border-slate-250 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/10 font-mono"
+                                              />
+                                            </div>
+
+                                            {/* Quantity */}
+                                            <div className="md:col-span-2">
+                                              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 text-center font-semibold">
+                                                Qty (Registers)
+                                              </label>
+                                              <input 
+                                                type="number"
+                                                min="1"
+                                                placeholder="1"
+                                                value={m.quantity || 1}
+                                                onChange={(e) => handleUpdateMouzaField(originalIndex, 'quantity', parseInt(e.target.value) || 1)}
+                                                className="w-full bg-white border border-slate-250 rounded-lg px-2 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/10 font-mono text-center"
+                                              />
+                                            </div>
+
+                                            {/* Status selection */}
+                                            <div className="md:col-span-4">
+                                              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                                                Scanning Status
+                                              </label>
+                                              <div className="flex gap-1.5">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleUpdateMouzaField(originalIndex, 'status', 'In Scanning')}
+                                                  className={cn(
+                                                    "flex-1 py-1.5 px-2.5 rounded-lg border text-xs font-bold transition-all",
+                                                    m.status === 'In Scanning'
+                                                      ? "bg-amber-50 text-amber-700 border-amber-200 shadow-sm"
+                                                      : "bg-white border-slate-200 text-slate-400 hover:text-slate-600"
+                                                  )}
+                                                >
+                                                  Scanning
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleUpdateMouzaField(originalIndex, 'status', 'Complete')}
+                                                  className={cn(
+                                                    "flex-1 py-1.5 px-2.5 rounded-lg border text-xs font-bold transition-all",
+                                                    m.status === 'Complete'
+                                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm"
+                                                      : "bg-white border-slate-200 text-slate-400 hover:text-slate-600"
+                                                  )}
+                                                >
+                                                  Complete
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))}
                                       </div>
                                     </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         {/* Action buttons footer for wizard */}
@@ -2015,6 +2119,81 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Global Mouza Stats Summary Cards */}
+              {(() => {
+                let globalTotalRegisters = 0;
+                let globalCompleteRegisters = 0;
+                let globalInScanningRegisters = 0;
+
+                mouzasData.forEach(m => {
+                  const RHZList = m.RHZ || [];
+                  const MutationList = m.Mutation || [];
+                  const ShajraList = m.Shajra || [];
+                  const all = [...RHZList, ...MutationList, ...ShajraList];
+                  
+                  all.forEach((r: any) => {
+                    const qty = r.quantity || 1;
+                    globalTotalRegisters += qty;
+                    if (r.status === 'Complete') {
+                      globalCompleteRegisters += qty;
+                    } else {
+                      globalInScanningRegisters += qty;
+                    }
+                  });
+                });
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Unique Mouzas */}
+                    <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow transition-shadow">
+                      <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100/50">
+                        <Map className="w-5.5 h-5.5" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Unique Mouzas</span>
+                        <span className="text-2xl font-black text-slate-800 font-mono leading-none block mt-1.5">{mouzasData.length}</span>
+                      </div>
+                    </div>
+
+                    {/* Total Registers */}
+                    <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow transition-shadow">
+                      <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100/50">
+                        <Layers className="w-5.5 h-5.5 text-blue-600" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Total Registers</span>
+                        <span className="text-2xl font-black text-slate-800 font-mono leading-none block mt-1.5">{globalTotalRegisters}</span>
+                      </div>
+                    </div>
+
+                    {/* Completed Registers */}
+                    <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow transition-shadow">
+                      <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100/50">
+                        <Check className="w-5.5 h-5.5" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-emerald-600 font-extrabold uppercase tracking-wider block">Completed</span>
+                        <span className="text-2xl font-black text-emerald-700 font-mono leading-none block mt-1.5">{globalCompleteRegisters}</span>
+                      </div>
+                    </div>
+
+                    {/* In Scanning Registers */}
+                    <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow transition-shadow">
+                      <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center shrink-0 border border-amber-100/50">
+                        <span className="relative flex h-3 w-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-amber-550 font-extrabold uppercase tracking-wider block">In Scanning</span>
+                        <span className="text-2xl font-black text-amber-700 font-mono leading-none block mt-1.5">{globalInScanningRegisters}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Filters & Search Card */}
               <Card className="p-4 flex flex-col md:flex-row items-center justify-between gap-4">
                 <div className="relative w-full md:max-w-md">
@@ -2028,8 +2207,8 @@ export default function App() {
                   />
                 </div>
                 <div className="text-xs text-slate-400 font-bold flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-650" />
-                  <span>Total Unique Mouzas: {mouzasData.length}</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-600" />
+                  <span>Showing filtered unique Mouzas: {mouzasData.filter(m => !mouzaSearch || m.name.toLowerCase().includes(mouzaSearch.toLowerCase())).length} of {mouzasData.length}</span>
                 </div>
               </Card>
 
@@ -2049,132 +2228,195 @@ export default function App() {
               ) : mouzasData.length === 0 ? (
                 <div className="bg-white border border-slate-150 rounded-2xl p-12 text-center">
                   <Globe className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                  <h4 className="text-base font-bold text-slate-705 text-slate-700">No Mouzas Scanned</h4>
+                  <h4 className="text-base font-bold text-slate-700">No Mouzas Scanned</h4>
                   <p className="text-slate-400 text-xs mt-1 max-w-sm mx-auto">No custom Mouzas or registers scanning data have been saved yet for this Site.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-8">
                   {mouzasData
                     .filter(m => !mouzaSearch || m.name.toLowerCase().includes(mouzaSearch.toLowerCase()))
                     .map((mouza) => {
-                      const totalQty = (mouza.RHZ || []).reduce((s: number, r: any) => s + (r.quantity || 1), 0) +
-                                       (mouza.Mutation || []).reduce((s: number, r: any) => s + (r.quantity || 1), 0) +
-                                       (mouza.Shajra || []).reduce((s: number, r: any) => s + (r.quantity || 1), 0);
+                      const RHZList = mouza.RHZ || [];
+                      const MutationList = mouza.Mutation || [];
+                      const ShajraList = mouza.Shajra || [];
+                      const allRegs = [...RHZList, ...MutationList, ...ShajraList];
+
+                      const totalQty = allRegs.reduce((s: number, r: any) => s + (r.quantity || 1), 0);
+                      const completeQty = allRegs.filter((r: any) => r.status === 'Complete').reduce((s: number, r: any) => s + (r.quantity || 1), 0);
+                      const inScanningQty = allRegs.filter((r: any) => r.status === 'In Scanning' || r.status !== 'Complete').reduce((s: number, r: any) => s + (r.quantity || 1), 0);
+
+                      // Extract and sort all unique years
+                      const allYearsSet = new Set<string>();
+                      RHZList.forEach((r: any) => { if (r.years) allYearsSet.add(r.years.trim()); });
+                      MutationList.forEach((r: any) => { if (r.years) allYearsSet.add(r.years.trim()); });
+                      ShajraList.forEach((r: any) => { if (r.years) allYearsSet.add(r.years.trim()); });
+                      
+                      const sortedYears = Array.from(allYearsSet).sort((a, b) => {
+                        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+                      });
 
                       return (
                         <div 
                           key={mouza.name}
-                          className="bg-white border border-slate-100 hover:border-indigo-100/80 rounded-2xl p-6 shadow-sm hover:shadow transition-all group flex flex-col justify-between"
+                          className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all group duration-300"
                         >
                           <div>
                             {/* Mouza Title Header */}
-                            <div className="flex items-start justify-between gap-3 mb-5">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100/50">
-                                  <Map className="w-4.5 h-4.5" />
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100/50">
+                                  <Map className="w-5 h-5" />
                                 </div>
-                                <h3 className="text-base font-bold text-slate-800 tracking-tight group-hover:text-indigo-900 transition-colors">
-                                  {mouza.name}
-                                </h3>
+                                <div>
+                                  <h3 className="text-lg font-black text-slate-800 tracking-tight group-hover:text-indigo-900 transition-colors">
+                                    {mouza.name}
+                                  </h3>
+                                  <p className="text-slate-400 text-xs font-semibold">Consolidated scan logs for this Mouza registry</p>
+                                </div>
                               </div>
-                              <span className="bg-slate-50 text-slate-500 border border-slate-200 text-[10px] uppercase font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
-                                <Layers className="w-3 h-3 text-slate-400" />
-                                <span>{totalQty} registers</span>
+                              <span className="bg-indigo-50/80 text-indigo-700 border border-indigo-105/40 text-[10px] uppercase font-extrabold px-3 py-1 rounded-xl flex items-center gap-1.5 self-start sm:self-center">
+                                <Layers className="w-3.5 h-3.5 text-indigo-500" />
+                                <span>{totalQty} registers total</span>
                               </span>
                             </div>
 
-                            {/* 3 Column Sub-layout for RHZ, Mutation, Shajra */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                              {/* RHZ Column */}
-                              <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 flex flex-col">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 border-b border-slate-100 pb-1.5 text-center">RHZ</span>
-                                {(!mouza.RHZ || mouza.RHZ.length === 0) ? (
-                                  <span className="text-[11px] text-slate-400 italic text-center block my-auto py-2">No records</span>
-                                ) : (
-                                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                                    {mouza.RHZ.map((r: any, idx: number) => (
-                                      <div key={idx} className="bg-white p-2 rounded-lg border border-slate-200/60 shadow-sm">
-                                        <div className="flex items-center justify-between text-[11px]">
-                                          <span className="font-bold text-slate-700 font-mono">{r.years}</span>
-                                          <span className={cn(
-                                            "font-extrabold text-[9px] px-1 py-0.2 rounded-sm",
-                                            r.status === 'Complete' 
-                                              ? "bg-emerald-50 text-emerald-700" 
-                                              : "bg-amber-50 text-amber-700 font-extrabold"
-                                          )}>
-                                            Q:{r.quantity || 1}
-                                          </span>
-                                        </div>
-                                        <div className="flex flex-col mt-1 text-[9px] text-slate-400 leading-tight">
-                                          <span>By: {r.operator}</span>
-                                          <span className="font-mono text-[8px]">{r.date}</span>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
+                            {/* Complete and In Scanning Numbers Sub-bar */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 mt-2 bg-slate-50/80 p-4 rounded-2xl border border-slate-100">
+                              <div className="text-center sm:text-left sm:pl-4">
+                                <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block leading-none">Total Registers</span>
+                                <span className="text-xl font-black text-slate-800 font-mono mt-1.5 block">{totalQty}</span>
                               </div>
-
-                              {/* Mutation Column */}
-                              <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 flex flex-col">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 border-b border-slate-100 pb-1.5 text-center font-semibold">Mutation</span>
-                                {(!mouza.Mutation || mouza.Mutation.length === 0) ? (
-                                  <span className="text-[11px] text-slate-400 italic text-center block my-auto py-2">No records</span>
-                                ) : (
-                                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                                    {mouza.Mutation.map((r: any, idx: number) => (
-                                      <div key={idx} className="bg-white p-2 rounded-lg border border-slate-200/60 shadow-sm">
-                                        <div className="flex items-center justify-between text-[11px]">
-                                          <span className="font-bold text-slate-700 font-mono">{r.years}</span>
-                                          <span className={cn(
-                                            "font-extrabold text-[9px] px-1 py-0.2 rounded-sm",
-                                            r.status === 'Complete' 
-                                              ? "bg-emerald-50 text-emerald-700" 
-                                              : "bg-amber-50 text-amber-700 font-extrabold"
-                                          )}>
-                                            Q:{r.quantity || 1}
-                                          </span>
-                                        </div>
-                                        <div className="flex flex-col mt-1 text-[9px] text-slate-400 leading-tight">
-                                          <span>By: {r.operator}</span>
-                                          <span className="font-mono text-[8px]">{r.date}</span>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
+                              <div className="border-l border-slate-200 text-center sm:text-left sm:pl-4">
+                                <span className="text-[10px] text-emerald-600 font-extrabold uppercase tracking-widest block leading-none">Completed Registers</span>
+                                <span className="text-xl font-black text-emerald-700 font-mono mt-1.5 block">Q: {completeQty}</span>
                               </div>
-
-                              {/* Shajra Column */}
-                              <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 flex flex-col">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 border-b border-slate-100 pb-1.5 text-center font-semibold">Shajra</span>
-                                {(!mouza.Shajra || mouza.Shajra.length === 0) ? (
-                                  <span className="text-[11px] text-slate-400 italic text-center block my-auto py-2">No records</span>
-                                ) : (
-                                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                                    {mouza.Shajra.map((r: any, idx: number) => (
-                                      <div key={idx} className="bg-white p-2 rounded-lg border border-slate-200/60 shadow-sm">
-                                        <div className="flex items-center justify-between text-[11px]">
-                                          <span className="font-bold text-slate-700 font-mono">{r.years}</span>
-                                          <span className={cn(
-                                            "font-extrabold text-[9px] px-1 py-0.2 rounded-sm",
-                                            r.status === 'Complete' 
-                                              ? "bg-emerald-50 text-emerald-700" 
-                                              : "bg-amber-50 text-amber-700 font-extrabold"
-                                          )}>
-                                            Q:{r.quantity || 1}
-                                          </span>
-                                        </div>
-                                        <div className="flex flex-col mt-1 text-[9px] text-slate-400 leading-tight">
-                                          <span>By: {r.operator}</span>
-                                          <span className="font-mono text-[8px]">{r.date}</span>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
+                              <div className="border-l border-slate-200 text-center sm:text-left sm:pl-4">
+                                <span className="text-[10px] text-amber-500 font-extrabold uppercase tracking-widest block leading-none">In Scanning Registers</span>
+                                <span className="text-xl font-black text-amber-700 font-mono mt-1.5 block">Q: {inScanningQty}</span>
+                              </div>
+                              <div className="border-l border-slate-200 text-center sm:text-left sm:pl-4">
+                                <span className="text-[10px] text-indigo-550 font-extrabold uppercase tracking-widest block leading-none">Completion Rate</span>
+                                <span className="text-xl font-black text-indigo-755 font-mono mt-1.5 block">
+                                  {totalQty > 0 ? Math.round((completeQty / totalQty) * 100) : 0}%
+                                </span>
                               </div>
                             </div>
+
+                            {/* Consolidated Aligned Table */}
+                            {sortedYears.length === 0 ? (
+                              <div className="text-center py-6 text-xs text-slate-400 font-bold bg-slate-50 border border-dashed border-slate-200 rounded-xl">
+                                No records of registry types defined yet.
+                              </div>
+                            ) : (
+                              <div className="overflow-x-auto rounded-2xl border border-slate-150 bg-white shadow-xs">
+                                <table className="min-w-full divide-y divide-slate-150 text-center">
+                                  <thead className="bg-slate-50/75">
+                                    <tr>
+                                      <th className="py-3 px-4 text-xs font-black text-slate-500 uppercase tracking-wider text-left pl-6">Year</th>
+                                      <th className="py-3 px-4 text-xs font-black text-slate-500 uppercase tracking-wider">RHZ</th>
+                                      <th className="py-3 px-4 text-xs font-black text-slate-500 uppercase tracking-wider">Mutation</th>
+                                      <th className="py-3 px-4 text-xs font-black text-slate-500 uppercase tracking-wider">Shajra</th>
+                                      <th className="py-3 px-4 text-xs font-black text-slate-500 uppercase tracking-wider text-right pr-6">Total Registers</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 bg-white">
+                                    {sortedYears.map((year) => {
+                                      const rhzRec = RHZList.find((r: any) => r.years.trim().toLowerCase() === year.toLowerCase());
+                                      const mutRec = MutationList.find((r: any) => r.years.trim().toLowerCase() === year.toLowerCase());
+                                      const shajRec = ShajraList.find((r: any) => r.years.trim().toLowerCase() === year.toLowerCase());
+                                      const rowTotal = (rhzRec?.quantity || 0) + (mutRec?.quantity || 0) + (shajRec?.quantity || 0);
+
+                                      return (
+                                        <tr key={year} className="hover:bg-slate-50/30 transition-colors">
+                                          <td className="py-4 px-4 text-sm font-extrabold text-slate-800 font-mono text-left pl-6">{year}</td>
+                                          <td className="py-4 px-4 text-xs">
+                                            {rhzRec ? (
+                                              <div className="inline-flex flex-col gap-1 items-center">
+                                                <span className={cn(
+                                                  "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold inline-flex items-center gap-1 shadow-2xs border",
+                                                  rhzRec.status === 'Complete' 
+                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-150" 
+                                                    : "bg-amber-50 text-amber-700 border-amber-150"
+                                                )}>
+                                                  <span className={cn(
+                                                    "w-1.5 h-1.5 rounded-full",
+                                                    rhzRec.status === 'Complete' ? "bg-emerald-500" : "bg-amber-550 animate-pulse"
+                                                  )} />
+                                                  {rhzRec.status === 'Complete' ? 'Complete' : 'Scanning'}
+                                                </span>
+                                                <span className="text-[10px] text-slate-500 font-extrabold font-mono mt-0.5">Qty: {rhzRec.quantity || 1}</span>
+                                                <div className="text-[9px] text-slate-400 font-semibold space-y-0.2 select-none">
+                                                  <span>By: {rhzRec.operator}</span>
+                                                  <span className="font-mono text-[8px] block">({rhzRec.date})</span>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <span className="text-slate-300 font-bold">-</span>
+                                            )}
+                                          </td>
+                                          <td className="py-4 px-4 text-xs">
+                                            {mutRec ? (
+                                              <div className="inline-flex flex-col gap-1 items-center">
+                                                <span className={cn(
+                                                  "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold inline-flex items-center gap-1 shadow-2xs border",
+                                                  mutRec.status === 'Complete' 
+                                                    ? "bg-emerald-50 text-emerald-700" 
+                                                    : "bg-amber-50 text-amber-700 border-amber-150"
+                                                )}>
+                                                  <span className={cn(
+                                                    "w-1.5 h-1.5 rounded-full",
+                                                    mutRec.status === 'Complete' ? "bg-emerald-500" : "bg-amber-550 animate-pulse"
+                                                  )} />
+                                                  {mutRec.status === 'Complete' ? 'Complete' : 'Scanning'}
+                                                </span>
+                                                <span className="text-[10px] text-slate-500 font-extrabold font-mono mt-0.5">Qty: {mutRec.quantity || 1}</span>
+                                                <div className="text-[9px] text-slate-400 font-semibold space-y-0.2 select-none">
+                                                  <span>By: {mutRec.operator}</span>
+                                                  <span className="font-mono text-[8px] block">({mutRec.date})</span>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <span className="text-slate-300 font-bold">-</span>
+                                            )}
+                                          </td>
+                                          <td className="py-4 px-4 text-xs">
+                                            {shajRec ? (
+                                              <div className="inline-flex flex-col gap-1 items-center">
+                                                <span className={cn(
+                                                  "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold inline-flex items-center gap-1 shadow-2xs border",
+                                                  shajRec.status === 'Complete' 
+                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-150" 
+                                                    : "bg-amber-50 text-amber-700 border-amber-150"
+                                                )}>
+                                                  <span className={cn(
+                                                    "w-1.5 h-1.5 rounded-full",
+                                                    shajRec.status === 'Complete' ? "bg-emerald-500" : "bg-amber-550 animate-pulse"
+                                                  )} />
+                                                  {shajRec.status === 'Complete' ? 'Complete' : 'Scanning'}
+                                                </span>
+                                                <span className="text-[10px] text-slate-500 font-extrabold font-mono mt-0.5">Qty: {shajRec.quantity || 1}</span>
+                                                <div className="text-[9px] text-slate-400 font-semibold space-y-0.2 select-none">
+                                                  <span>By: {shajRec.operator}</span>
+                                                  <span className="font-mono text-[8px] block">({shajRec.date})</span>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <span className="text-slate-300 font-bold">-</span>
+                                            )}
+                                          </td>
+                                          <td className="py-4 px-4 text-sm font-black font-mono text-slate-700 text-right pr-6">
+                                            <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-xl border border-slate-200">
+                                              {rowTotal}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+
                           </div>
                         </div>
                       );

@@ -1461,13 +1461,39 @@ async function startServer() {
             const typeKey = m.type as 'RHZ' | 'Mutation' | 'Shajra';
             
             if (typeKey === 'RHZ' || typeKey === 'Mutation' || typeKey === 'Shajra') {
-              targetGroup[typeKey].push({
-                years: m.years || 'Unknown',
-                quantity: isNaN(Number(m.quantity)) ? 1 : Number(m.quantity),
-                status: m.status || 'In Scanning',
-                operator: operatorName,
-                date: date
-              });
+              const yearsVal = (m.years || 'Unknown').trim();
+              const existingIndex = targetGroup[typeKey].findIndex((item: any) => item.years.trim().toUpperCase() === yearsVal.toUpperCase());
+              
+              const newQty = isNaN(Number(m.quantity)) ? 1 : Number(m.quantity);
+              const newStatus = m.status || 'In Scanning';
+              const newDate = date || '';
+
+              if (existingIndex > -1) {
+                const existing = targetGroup[typeKey][existingIndex];
+                const isNewer = !existing.date || newDate >= existing.date;
+                let finalStatus = isNewer ? newStatus : existing.status;
+                
+                // If either is Complete, it's Complete
+                if (existing.status === 'Complete' || newStatus === 'Complete') {
+                  finalStatus = 'Complete';
+                }
+
+                targetGroup[typeKey][existingIndex] = {
+                  years: yearsVal,
+                  quantity: isNewer ? newQty : existing.quantity,
+                  status: finalStatus,
+                  operator: isNewer ? operatorName : existing.operator,
+                  date: isNewer ? newDate : existing.date
+                };
+              } else {
+                targetGroup[typeKey].push({
+                  years: yearsVal,
+                  quantity: newQty,
+                  status: newStatus,
+                  operator: operatorName,
+                  date: newDate
+                });
+              }
             }
           });
         }
