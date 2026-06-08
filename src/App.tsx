@@ -549,7 +549,24 @@ export default function App() {
     try {
       const res = await apiFetch(`/api/scanning-data?siteId=${selectedSiteId}&date=${adminDate}`);
       const data = await res.json();
-      setAdminData(data.data);
+      
+      const processedData = (data.data || []).map((item: any) => {
+        const mouzas = item.mouzas || [];
+        const processedMouzas = mouzas.map((m: any) => {
+          if (m.groupId) return m;
+          const nameKey = (m.name || '').trim().toLowerCase() || 'unnamed';
+          return {
+            ...m,
+            groupId: `g_fallback_${nameKey}`
+          };
+        });
+        return {
+          ...item,
+          mouzas: processedMouzas
+        };
+      });
+
+      setAdminData(processedData);
       setExtraPages(data.extra_pages);
     } catch (err) {
       console.error(err);
@@ -576,12 +593,24 @@ export default function App() {
       if (res.ok) {
         const result = await res.json();
         if (result.mouzas && result.mouzas.length > 0) {
+          const nameToGroupIdMap = new Map<string, string>();
+          const cleanedCopy = result.mouzas.map((m: any) => {
+            const nameKey = (m.name || 'New Mouza').trim().toLowerCase();
+            if (!nameToGroupIdMap.has(nameKey)) {
+              nameToGroupIdMap.set(nameKey, `g_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
+            }
+            return {
+              ...m,
+              groupId: nameToGroupIdMap.get(nameKey)
+            };
+          });
+
           setAdminData(prev => prev.map((item, idx) => {
             if (idx === selectedOperatorIndex) {
-              const sumOfQuantities = result.mouzas.reduce((sum: number, curr: any) => sum + (parseInt(curr.quantity as any) || 0), 0);
+              const sumOfQuantities = cleanedCopy.reduce((sum: number, curr: any) => sum + (parseInt(curr.quantity as any) || 0), 0);
               return {
                 ...item,
-                mouzas: result.mouzas,
+                mouzas: cleanedCopy,
                 files: sumOfQuantities
               };
             }
@@ -625,14 +654,16 @@ export default function App() {
     setAdminData(prev => prev.map((item, idx) => {
       if (idx === selectedOperatorIndex) {
         const existingMouzas = item.mouzas || [];
+        const uniqueGroupId = `g_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         const newMouzas = [
           ...existingMouzas,
           {
             name: 'New Mouza',
-            status: 'In Scanning',
+            status: 'In Scanning' as const,
             years: '',
-            type: 'RHZ',
-            quantity: 1
+            type: 'RHZ' as const,
+            quantity: 1,
+            groupId: uniqueGroupId
           }
         ];
         const sumOfQuantities = newMouzas.reduce((sum, curr) => sum + (parseInt(curr.quantity as any) || 0), 0);
@@ -646,7 +677,7 @@ export default function App() {
     }));
   };
 
-  const handleAddRowToMouzaGroup = (mouzaName: string) => {
+  const handleAddRowToMouzaGroup = (mouzaGroupId: string, mouzaName: string) => {
     setAdminData(prev => prev.map((item, idx) => {
       if (idx === selectedOperatorIndex) {
         const existingMouzas = item.mouzas || [];
@@ -654,10 +685,11 @@ export default function App() {
           ...existingMouzas,
           {
             name: mouzaName,
-            status: 'In Scanning',
+            status: 'In Scanning' as const,
             years: '',
-            type: 'RHZ',
-            quantity: 1
+            type: 'RHZ' as const,
+            quantity: 1,
+            groupId: mouzaGroupId
           }
         ];
         const sumOfQuantities = newMouzas.reduce((sum, curr) => sum + (parseInt(curr.quantity as any) || 0), 0);
@@ -1983,15 +2015,15 @@ export default function App() {
 
                           {(() => {
                             const rawMouzas = adminData[selectedOperatorIndex]?.mouzas || [];
-                            // Let's group rawMouzas by name, preserving their original order of appearance
-                            const groupedMouzas: Array<{ name: string; indices: number[]; entries: Array<{ originalIndex: number; record: MouzaEntry }> }> = [];
+                            // Let's group rawMouzas by groupId, fallback to name, preserving original appearance order
+                            const groupedMouzas: Array<{ name: string; groupId: string; indices: number[]; entries: Array<{ originalIndex: number; record: MouzaEntry }> }> = [];
 
                             rawMouzas.forEach((record, originalIndex) => {
                               const name = record.name || '';
-                              const trimmedLower = name.trim().toLowerCase();
-                              let group = groupedMouzas.find(g => g.name.trim().toLowerCase() === trimmedLower);
+                              const groupId = record.groupId || `g_fallback_${name.trim().toLowerCase() || 'unnamed'}`;
+                              let group = groupedMouzas.find(g => g.groupId === groupId);
                               if (!group) {
-                                group = { name, indices: [], entries: [] };
+                                group = { name, groupId, indices: [], entries: [] };
                                 groupedMouzas.push(group);
                               }
                               group.indices.push(originalIndex);
@@ -2069,7 +2101,7 @@ export default function App() {
                                         <div className="flex items-center gap-2 shrink-0">
                                           <button
                                             type="button"
-                                            onClick={() => handleAddRowToMouzaGroup(group.name)}
+                                            onClick={() => handleAddRowToMouzaGroup(group.groupId, group.name)}
                                             className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors border border-indigo-100"
                                             title="Add extra years or register row for this Mouza"
                                           >

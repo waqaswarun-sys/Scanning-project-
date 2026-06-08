@@ -16,6 +16,7 @@ export interface MouzaEntry {
   years: string;
   type: 'RHZ' | 'Mutation' | 'Shajra';
   quantity: number | string;
+  groupId?: string;
 }
 
 export interface ScanningData {
