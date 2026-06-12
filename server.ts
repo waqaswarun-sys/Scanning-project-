@@ -1439,13 +1439,26 @@ async function startServer() {
       return res.status(400).json({ error: "employeeId query param is required" });
     }
     try {
-      const snapshot = await db.collection('scanning_data')
-        .where('employee_id', '==', employeeId)
-        .orderBy('date', 'desc')
+      let snapshot = await db.collection('scanning_data')
+        .where('employee_id', '==', String(employeeId))
         .get();
 
-      for (const doc of snapshot.docs) {
-        const d = doc.data();
+      // If empty and employeeId is numeric, try searching as a number
+      if (snapshot.empty && !isNaN(Number(employeeId))) {
+        snapshot = await db.collection('scanning_data')
+          .where('employee_id', '==', Number(employeeId))
+          .get();
+      }
+
+      const docs = snapshot.docs.map(doc => doc.data());
+      // Sort descending by date in memory to avoid needing a composite index
+      docs.sort((a, b) => {
+        const dateA = String(a.date || '');
+        const dateB = String(b.date || '');
+        return dateB.localeCompare(dateA);
+      });
+
+      for (const d of docs) {
         if (date && d.date >= String(date)) continue;
         if (Array.isArray(d.mouzas) && d.mouzas.length > 0) {
           const cleanMouzas = d.mouzas.map((m: any) => ({

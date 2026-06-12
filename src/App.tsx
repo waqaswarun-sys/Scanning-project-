@@ -936,14 +936,7 @@ export default function App() {
 
   const downloadPDFReport = () => {
     // Pages, registers/files, and mouzas count taken directly from stats overall (which corresponds to dashboard)
-    const extraPages = stats?.monthly?.reduce((sum, m) => sum + (m.extra_pages || 0), 0) || 0;
-    let originalPages = 0;
-    if (stats?.mode === 'main') {
-      originalPages = (stats?.overall?.total_pages || 0) - extraPages;
-    } else {
-      originalPages = stats?.overall?.total_pages || 0;
-    }
-    const finalPages = originalPages + extraPages;
+    const finalPages = stats?.overall?.total_pages || 0;
     const finalFiles = stats?.overall?.total_files || 0;
     const finalMouzas = stats?.overall?.total_mouza_scanned || 0;
     let siteName = "MULTAN";
@@ -983,10 +976,10 @@ export default function App() {
 
     // Metrics container box
     doc.setFillColor(248, 250, 252); // Slate 50 background for card metrics
-    doc.roundedRect(15, 75, 180, 125, 4, 4, 'F');
+    doc.roundedRect(15, 75, 180, 85, 4, 4, 'F');
     doc.setDrawColor(borderSlate[0], borderSlate[1], borderSlate[2]); // Slate 200 border
     doc.setLineWidth(0.6);
-    doc.roundedRect(15, 75, 180, 125, 4, 4, 'D');
+    doc.roundedRect(15, 75, 180, 85, 4, 4, 'D');
 
     // Box Header Label
     doc.setTextColor(100, 116, 139); // Slate 500
@@ -998,60 +991,38 @@ export default function App() {
     doc.setLineWidth(0.5);
     doc.line(25, 93, 185, 93);
 
-    // Row 1: ORIGINAL PAGES SCANNED
+    // Row 1: TOTAL PAGES SCANNED (Sum calculated appropriately)
     doc.setTextColor(30, 41, 59); // Slate 800
     doc.setFont("Helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text("ORIGINAL PAGES SCANNED :", 25, 108);
-
-    doc.setTextColor(71, 85, 105); // Slate 600
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(13);
-    doc.text(originalPages.toLocaleString(), 145, 108);
-
-    // Row 2: EXTRA PAGES (EP)
-    doc.setTextColor(30, 41, 59); 
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text("EXTRA PAGES (EP) :", 25, 126);
-
-    doc.setTextColor(217, 119, 6); // Amber/Orange
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(13);
-    doc.text(extraPages.toLocaleString(), 145, 126);
-
-    // Row 3: TOTAL PAGES SCANNED (Sum of both)
-    doc.setTextColor(30, 41, 59); 
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text("TOTAL PAGES SCANNED (SUM) :", 25, 144);
+    doc.setFontSize(12);
+    doc.text("TOTAL PAGES SCANNED :", 25, 110);
 
     doc.setTextColor(79, 70, 229); // Indigo/Purple
     doc.setFont("Helvetica", "bold");
-    doc.setFontSize(15);
-    doc.text(finalPages.toLocaleString(), 145, 144);
+    doc.setFontSize(16);
+    doc.text(finalPages.toLocaleString(), 145, 110);
 
-    // Row 4: TOTAL REGISTERS SCANNED
+    // Row 2: TOTAL REGISTERS SCANNED
     doc.setTextColor(30, 41, 59); 
     doc.setFont("Helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text("TOTAL REGISTERS SCANNED :", 25, 162);
+    doc.setFontSize(12);
+    doc.text("TOTAL REGISTERS SCANNED :", 25, 128);
 
     doc.setTextColor(30, 41, 59); // Slate 800
     doc.setFont("Helvetica", "bold");
-    doc.setFontSize(13);
-    doc.text(finalFiles.toLocaleString(), 145, 162);
+    doc.setFontSize(14);
+    doc.text(finalFiles.toLocaleString(), 145, 128);
 
-    // Row 5: TOTAL MOUZAS SCANNED
+    // Row 3: TOTAL MOUZAS SCANNED
     doc.setTextColor(30, 41, 59); 
     doc.setFont("Helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text("TOTAL MOUZAS SCANNED :", 25, 180);
+    doc.setFontSize(12);
+    doc.text("TOTAL MOUZAS SCANNED :", 25, 146);
 
     doc.setTextColor(5, 150, 105); // Emerald green
     doc.setFont("Helvetica", "bold");
-    doc.setFontSize(13);
-    doc.text(finalMouzas.toLocaleString(), 145, 180);
+    doc.setFontSize(14);
+    doc.text(finalMouzas.toLocaleString(), 145, 146);
 
     doc.save(`${siteName}_SCANNING_SUMMARY.pdf`);
   };
