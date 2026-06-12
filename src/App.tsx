@@ -935,25 +935,15 @@ export default function App() {
   };
 
   const downloadPDFReport = () => {
-    // Determine the values to use from stats overall or sum of sitesSummary
-    let finalPages = 0;
-    let finalFiles = 0;
-    let finalMouzas = 0;
+    // Pages, registers/files, and mouzas count taken directly from stats overall (which corresponds to dashboard)
+    const finalPages = stats?.overall?.total_pages || 0;
+    const finalFiles = stats?.overall?.total_files || 0;
+    const finalMouzas = stats?.overall?.total_mouza_scanned || 0;
     let siteName = "MULTAN";
 
-    if (stats?.overall) {
-      finalPages = stats.overall.total_pages || 0;
-      finalFiles = stats.overall.total_files || 0;
-      finalMouzas = stats.overall.total_mouza_scanned || 0;
-      const selectedSite = sitesSummary.find(s => String(s.id) === String(selectedSiteId));
-      if (selectedSite) {
-        siteName = selectedSite.name.toUpperCase();
-      }
-    } else {
-      // Sum across all sites
-      finalPages = sitesSummary.reduce((sum, s) => sum + (s.total_pages || 0), 0);
-      finalFiles = sitesSummary.reduce((sum, s) => sum + (s.total_files || 0), 0);
-      finalMouzas = sitesSummary.reduce((sum, s) => sum + (s.total_mouza_scanned || 0), 0) || sitesSummary.length;
+    const selectedSite = sitesSummary.find(s => String(s.id) === String(selectedSiteId));
+    if (selectedSite) {
+      siteName = selectedSite.name.toUpperCase();
     }
 
     const doc = new jsPDF({
@@ -974,12 +964,7 @@ export default function App() {
     doc.setTextColor(255, 255, 255);
     doc.setFont("Helvetica", "bold");
     doc.setFontSize(26);
-    doc.text(`${siteName} SCANNING`, 20, 25);
-    
-    doc.setFont("Helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(199, 210, 254); // Light Indigo/Lavendar accent
-    doc.text("REAL-TIME RECONCILIATION & SCANNING REPORT", 20, 34);
+    doc.text(`${siteName} SCANNING STATUS SUMMARY`, 20, 28);
 
     // Dynamic Date Generation line banner
     doc.setFillColor(30, 41, 59); // Slate 800 sub-band
@@ -991,10 +976,10 @@ export default function App() {
 
     // Metrics container box
     doc.setFillColor(248, 250, 252); // Slate 50 background for card metrics
-    doc.roundedRect(15, 75, 180, 115, 4, 4, 'F');
+    doc.roundedRect(15, 75, 180, 100, 4, 4, 'F');
     doc.setDrawColor(borderSlate[0], borderSlate[1], borderSlate[2]); // Slate 200 border
     doc.setLineWidth(0.6);
-    doc.roundedRect(15, 75, 180, 115, 4, 4, 'D');
+    doc.roundedRect(15, 75, 180, 100, 4, 4, 'D');
 
     // Box Header Label
     doc.setTextColor(100, 116, 139); // Slate 500
@@ -1021,48 +1006,23 @@ export default function App() {
     doc.setTextColor(30, 41, 59); 
     doc.setFont("Helvetica", "bold");
     doc.setFontSize(12);
-    doc.text("TOTAL NUMBER OF REGISTERS SCANNED :", 25, 135);
+    doc.text("TOTAL NUMBER OF REGISTERS SCANNED :", 25, 133);
 
     doc.setTextColor(217, 119, 6); // Amber text
     doc.setFont("Helvetica", "bold");
     doc.setFontSize(16);
-    doc.text(finalFiles.toLocaleString(), 140, 135);
+    doc.text(finalFiles.toLocaleString(), 140, 133);
 
     // Row 3: TOTAL MOUZAS SCANNED (Emerald green success highlight)
     doc.setTextColor(30, 41, 59); 
     doc.setFont("Helvetica", "bold");
     doc.setFontSize(12);
-    doc.text("TOTAL NUMBER OF MOUZA SCANNED :", 25, 159);
+    doc.text("TOTAL NUMBER OF MOUZA SCANNED :", 25, 155);
 
     doc.setTextColor(5, 150, 105); // Emerald values
     doc.setFont("Helvetica", "bold");
     doc.setFontSize(16);
-    doc.text(finalMouzas.toLocaleString(), 140, 159);
-
-    // Card divider bar
-    doc.setDrawColor(226, 232, 240);
-    doc.line(25, 171, 185, 171);
-
-    // Card subtitle signature
-    doc.setTextColor(148, 163, 184); // Slate 400
-    doc.setFont("Helvetica", "italic");
-    doc.setFontSize(8.5);
-    doc.text("This data is processed authoritativly from the underlying site registers.", 25, 180);
-
-    // Disclaimer footer
-    doc.setTextColor(148, 163, 184);
-    doc.setFont("Helvetica", "normal");
-    doc.setFontSize(8);
-    doc.text("Punjab Land Record Scanning Project. Generated automatically inside AI Studio Workspace.", 15, 215);
-
-    // Signature Block line
-    doc.setDrawColor(203, 213, 225);
-    doc.line(135, 248, 195, 248);
-    
-    doc.setTextColor(71, 85, 105);
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(9.5);
-    doc.text("VERIFIED OFFICER SIGNATURE", 137, 254);
+    doc.text(finalMouzas.toLocaleString(), 140, 155);
 
     doc.save(`${siteName}_SCANNING_SUMMARY.pdf`);
   };
@@ -2486,11 +2446,20 @@ export default function App() {
                 let globalTotalRHZ = 0;
                 let globalTotalMutation = 0;
                 let globalTotalShajra = 0;
+                let scannedMouzasCount = 0;
+                let inScanningMouzasCount = 0;
 
                 mouzasData.forEach(m => {
                   const RHZList = m.RHZ || [];
                   const MutationList = m.Mutation || [];
                   const ShajraList = m.Shajra || [];
+                  const allRegs = [...RHZList, ...MutationList, ...ShajraList];
+                  const isComplete = allRegs.length > 0 && allRegs.every((r: any) => r.status === 'Complete');
+                  if (allRegs.length > 0 && isComplete) {
+                    scannedMouzasCount++;
+                  } else {
+                    inScanningMouzasCount++;
+                  }
                   
                   RHZList.forEach((r: any) => {
                     globalTotalRHZ += (Number(r.quantity) || 1);
@@ -2504,15 +2473,26 @@ export default function App() {
                 });
 
                 return (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {/* Unique Mouzas */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    {/* Scanned Mouzas */}
                     <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow transition-shadow">
-                      <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100/50">
+                      <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100/50">
+                        <Check className="w-5.5 h-5.5" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Scanned Mouzas</span>
+                        <span className="text-2xl font-black text-slate-800 font-mono leading-none block mt-1.5">{scannedMouzasCount}</span>
+                      </div>
+                    </div>
+
+                    {/* In Scanning Mouzas */}
+                    <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center gap-4 hover:shadow transition-shadow">
+                      <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-100/50">
                         <Map className="w-5.5 h-5.5" />
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Unique Mouzas</span>
-                        <span className="text-2xl font-black text-slate-800 font-mono leading-none block mt-1.5">{mouzasData.length}</span>
+                        <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">In Scanning Mouzas</span>
+                        <span className="text-2xl font-black text-slate-800 font-mono leading-none block mt-1.5">{inScanningMouzasCount}</span>
                       </div>
                     </div>
 
