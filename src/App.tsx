@@ -303,7 +303,7 @@ export default function App() {
     }
   }, [isAuthenticated]);
 
-  const currentMode = view === 'main-view' ? 'main' : 'personal';
+  const currentMode = (view === 'main-view' || view === 'admin-reports') ? 'main' : 'personal';
 
   useEffect(() => {
     if (selectedSiteId) {
@@ -319,7 +319,7 @@ export default function App() {
   }, [selectedSiteId, view, adminDate]);
 
   useEffect(() => {
-    if (selectedSiteId && view === 'mouza-details') {
+    if (selectedSiteId && (view === 'mouza-details' || view === 'admin-data-entry')) {
       fetchMouzasData();
     }
   }, [selectedSiteId, view]);
@@ -2230,8 +2230,14 @@ export default function App() {
                                               placeholder="Enter Mouza Name..."
                                               value={group.name}
                                               onChange={(e) => handleRenameMouzaGroup(group.indices, e.target.value)}
+                                              list="mouza-suggestions-all"
                                               className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                                             />
+                                            <datalist id="mouza-suggestions-all">
+                                              {Array.from(new Set(mouzasData.map(m => m.name))).filter(Boolean).map((name, mIdx) => (
+                                                <option key={mIdx} value={name} />
+                                              ))}
+                                            </datalist>
                                           </div>
 
                                           {/* Consolidated Mouza-Level Status Selection */}

@@ -1472,6 +1472,20 @@ async function startServer() {
         }
       }
 
+      // Fallback: search for any entry ever (including the current date or later) if no older ones exist
+      for (const d of docs) {
+        if (Array.isArray(d.mouzas) && d.mouzas.length > 0) {
+          const cleanMouzas = d.mouzas.map((m: any) => ({
+            name: m.name || '',
+            status: m.status || 'In Scanning',
+            years: m.years || '',
+            type: m.type || 'RHZ',
+            quantity: m.quantity ?? 1
+          }));
+          return res.json({ mouzas: cleanMouzas, sourceDate: d.date });
+        }
+      }
+
       res.json({ mouzas: [], message: "No previous Mouzas found" });
     } catch (err) {
       console.error('[LAST_MOUZAS] Fetch error:', err);
