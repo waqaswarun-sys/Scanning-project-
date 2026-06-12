@@ -1170,6 +1170,7 @@ async function startServer() {
           total_files: scanning.files,
           total_pages: scanning.pages + extraPages,
           extra_pages: extraPages,
+          default_extra_pages: siteData.default_extra_pages || 0,
           rate: siteData.rate || 0.3,
           unit: siteData.unit || 'Files'
         };
@@ -1383,10 +1384,27 @@ async function startServer() {
       // Update extra pages
       const extraDocId = `${siteId}_${date}`;
       const extraRef = db.collection('daily_extra_pages').doc(extraDocId);
+      
+      let finalExtraPages = 0;
+      if (extra_pages !== undefined && extra_pages !== null) {
+        finalExtraPages = Number(extra_pages);
+      } else {
+        const existingDoc = await extraRef.get();
+        if (existingDoc.exists) {
+          finalExtraPages = Number(existingDoc.data()?.extra_pages || 0);
+        } else {
+          // Fetch default_extra_pages from the site
+          const siteDoc = await db.collection('sites').doc(siteId).get();
+          if (siteDoc.exists) {
+            finalExtraPages = Number(siteDoc.data()?.default_extra_pages || 0);
+          }
+        }
+      }
+
       batch.set(extraRef, {
         site_id: siteId,
         date,
-        extra_pages: Number(extra_pages || 0),
+        extra_pages: finalExtraPages,
         updated_at: FieldValue.serverTimestamp()
       }, { merge: true });
 
@@ -1474,7 +1492,14 @@ async function startServer() {
       // Group mouzas
       const mouzaGroups: { [mouzaName: string]: { name: string; RHZ: any[]; Mutation: any[]; Shajra: any[] } } = {};
 
-      scanningSnapshot.docs.forEach(doc => {
+      // Sort documents chronologically by date ascending so newer dates overwrite older dates
+      const sortedDocs = [...scanningSnapshot.docs].sort((a, b) => {
+        const da = a.data().date || '';
+        const db_val = b.data().date || '';
+        return da.localeCompare(db_val);
+      });
+
+      sortedDocs.forEach(doc => {
         const data = doc.data();
         const date = data.date;
         const operatorName = employeeMap.get(data.employee_id) || "Unknown Operator";
@@ -1859,7 +1884,7 @@ async function startServer() {
     if (!checkSiteAccess(req.user, req.params.id, 'admin-sites')) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    const { target_files, rate, unit, total_mouza_scanned } = req.body;
+    const { target_files, rate, unit, total_mouza_scanned, default_extra_pages } = req.body;
     try {
       const updateData: any = {
         updated_at: FieldValue.serverTimestamp()
@@ -1868,6 +1893,7 @@ async function startServer() {
       if (rate !== undefined) updateData.rate = Number(rate);
       if (unit !== undefined) updateData.unit = String(unit);
       if (total_mouza_scanned !== undefined) updateData.total_mouza_scanned = Number(total_mouza_scanned);
+      if (default_extra_pages !== undefined) updateData.default_extra_pages = Number(default_extra_pages);
 
       await db.collection('sites').doc(req.params.id).update(updateData);
 
@@ -1895,9 +1921,56 @@ async function startServer() {
     }
   });
 
+  // Endpoints for specific previous-dates extra-pages editing
+  app.get("/api/sites/:siteId/daily-extra-pages", requireAuth, async (req: any, res) => {
+    const { siteId } = req.params;
+    const { date } = req.query;
+    if (!siteId || !date) {
+      return res.status(400).json({ error: "siteId and date are required" });
+    }
+    try {
+      const extraDocId = `${siteId}_${date}`;
+      const doc = await db.collection('daily_extra_pages').doc(extraDocId).get();
+      if (doc.exists) {
+        return res.json({ extra_pages: doc.data()?.extra_pages || 0 });
+      }
+      // Fallback to site's configured default
+      const siteDoc = await db.collection('sites').doc(siteId).get();
+      const defaultEP = siteDoc.exists ? (siteDoc.data()?.default_extra_pages || 0) : 0;
+      res.json({ extra_pages: defaultEP });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/sites/:siteId/daily-extra-pages", requireAuth, async (req: any, res) => {
+    const { siteId } = req.params;
+    const { date, extra_pages } = req.body;
+    if (!siteId || !date || extra_pages === undefined) {
+      return res.status(400).json({ error: "siteId, date, and extra_pages are required" });
+    }
+    try {
+      const extraDocId = `${siteId}_${date}`;
+      await db.collection('daily_extra_pages').doc(extraDocId).set({
+        site_id: siteId,
+        date,
+        extra_pages: Number(extra_pages),
+        updated_at: FieldValue.serverTimestamp()
+      }, { merge: true });
+      clearCache('sites-summary');
+      clearCache('operators-summary');
+      clearCache(`stats-${siteId}`);
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.post("/api/sites", requireAuth, async (req: any, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
-    const { name, target_files, rate, unit, total_mouza_scanned } = req.body;
+    const { name, target_files, rate, unit, total_mouza_scanned, default_extra_pages } = req.body;
     
     if (!name || typeof name !== 'string' || name.length < 2 || name.length > 50) {
       return res.status(400).json({ error: "Site name must be between 2 and 50 characters" });
@@ -1910,10 +1983,11 @@ async function startServer() {
         total_mouza_scanned: total_mouza_scanned || 0,
         rate: rate || 0.3,
         unit: unit || 'Files',
+        default_extra_pages: default_extra_pages || 0,
         created_at: FieldValue.serverTimestamp()
       });
       clearCache('sites-summary');
-      res.json({ id: docRef.id, name, target_files, total_mouza_scanned: total_mouza_scanned || 0, rate: rate || 0.3, unit: unit || 'Files' });
+      res.json({ id: docRef.id, name, target_files, total_mouza_scanned: total_mouza_scanned || 0, rate: rate || 0.3, unit: unit || 'Files', default_extra_pages: default_extra_pages || 0 });
     } catch (err) {
       console.error("Site create error:", err);
       res.status(500).json({ error: "Failed to create site" });

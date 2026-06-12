@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { jsPDF } from 'jspdf';
 import { 
   LayoutDashboard, 
   ChevronLeft, 
@@ -96,7 +97,6 @@ export default function App() {
   // Admin State
   const [adminDate, setAdminDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [adminData, setAdminData] = useState<ScanningData[]>([]);
-  const [extraPages, setExtraPages] = useState<number | string>(0);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isDownloading, setIsDownloading] = useState<'personal' | 'main' | null>(null);
@@ -116,6 +116,7 @@ export default function App() {
   const [newSiteTarget, setNewSiteTarget] = useState('');
   const [newSiteRate, setNewSiteRate] = useState('0.3');
   const [newSiteUnit, setNewSiteUnit] = useState('Files');
+  const [newSiteDefaultExtraPages, setNewSiteDefaultExtraPages] = useState('0');
   const [newEmployeeName, setNewEmployeeName] = useState('');
   const [updateTargetValue, setUpdateTargetValue] = useState('');
   const [updateMouzaValue, setUpdateMouzaValue] = useState('');
@@ -140,6 +141,16 @@ export default function App() {
   const [newSiteRateValue, setNewSiteRateValue] = useState('');
   const [isUpdatingSiteUnit, setIsUpdatingSiteUnit] = useState<string | number | null>(null);
   const [newSiteUnitValue, setNewSiteUnitValue] = useState('');
+  const [isUpdatingSiteDefaultEP, setIsUpdatingSiteDefaultEP] = useState<string | number | null>(null);
+  const [newSiteDefaultEPValue, setNewSiteDefaultEPValue] = useState('');
+
+  // Past Extra Pages Editor States
+  const [editPastSiteId, setEditPastSiteId] = useState<string>('');
+  const [editPastDate, setEditPastDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const [editPastEPValue, setEditPastEPValue] = useState<string>('0');
+  const [isSavingPastEP, setIsSavingPastEP] = useState<boolean>(false);
+  const [isFetchingPastEP, setIsFetchingPastEP] = useState<boolean>(false);
+  const [pastEPMessage, setPastEPMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   // Mouza Details State
   const [mouzasData, setMouzasData] = useState<any[]>([]);
@@ -342,6 +353,18 @@ export default function App() {
     }
   }, [view, selectedOperatorId, summaryMonth]);
 
+  useEffect(() => {
+    if (view === 'admin-sites' && editPastSiteId && editPastDate) {
+      fetchSpecificDateEP(editPastSiteId, editPastDate);
+    }
+  }, [editPastSiteId, editPastDate, view]);
+
+  useEffect(() => {
+    if (view === 'admin-sites' && !editPastSiteId && sitesSummary.length > 0) {
+      setEditPastSiteId(sitesSummary[0].id.toString());
+    }
+  }, [view, sitesSummary, editPastSiteId]);
+
   const fetchAllOperators = async () => {
     try {
       const res = await apiFetch('/api/all-operators');
@@ -451,6 +474,72 @@ export default function App() {
     }
   };
 
+  const updateSiteDefaultEP = async (id: string | number, defaultEP: number) => {
+    try {
+      const res = await apiFetch(`/api/sites/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ default_extra_pages: defaultEP })
+      });
+      if (res.ok) {
+        setIsUpdatingSiteDefaultEP(null);
+        setNewSiteDefaultEPValue('');
+        fetchSites();
+        fetchSitesSummary();
+        fetchStats();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchSpecificDateEP = async (siteId: string, date: string) => {
+    if (!siteId || !date) return;
+    setIsFetchingPastEP(true);
+    try {
+      const res = await apiFetch(`/api/sites/${siteId}/daily-extra-pages?date=${date}`);
+      if (res.ok) {
+        const data = await res.json();
+        setEditPastEPValue((data.extra_pages || 0).toString());
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsFetchingPastEP(false);
+    }
+  };
+
+  const handleSavePastEP = async () => {
+    if (!editPastSiteId || !editPastDate) return;
+    setIsSavingPastEP(true);
+    setPastEPMessage(null);
+    try {
+      const res = await apiFetch(`/api/sites/${editPastSiteId}/daily-extra-pages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: editPastDate,
+          extra_pages: parseInt(editPastEPValue) || 0
+        })
+      });
+      if (res.ok) {
+        fetchSitesSummary();
+        fetchStats();
+        setPastEPMessage({ type: 'success', text: `Successfully updated extra pages on ${editPastDate}` });
+        setTimeout(() => setPastEPMessage(null), 4000);
+      } else {
+        setPastEPMessage({ type: 'error', text: 'Failed to update extra pages.' });
+        setTimeout(() => setPastEPMessage(null), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+      setPastEPMessage({ type: 'error', text: 'Connection error. Please try again.' });
+      setTimeout(() => setPastEPMessage(null), 4000);
+    } finally {
+      setIsSavingPastEP(false);
+    }
+  };
+
   const handleCopy = (date: Date, files: number, pages: number) => {
     const dateStr = format(date, 'dd MMM yyyy');
     const unit = stats?.overall.unit || 'Files';
@@ -545,7 +634,6 @@ export default function App() {
   const fetchAdminData = async () => {
     if (!selectedSiteId) return;
     setAdminData([]);
-    setExtraPages(0);
     try {
       const res = await apiFetch(`/api/scanning-data?siteId=${selectedSiteId}&date=${adminDate}`);
       const data = await res.json();
@@ -567,7 +655,6 @@ export default function App() {
       });
 
       setAdminData(processedData);
-      setExtraPages(data.extra_pages);
     } catch (err) {
       console.error(err);
     }
@@ -781,8 +868,7 @@ export default function App() {
             files: item.files || 0,
             pages: item.pages || 0,
             mouzas: item.mouzas || []
-          })),
-          extra_pages: parseInt(extraPages.toString()) || 0
+          }))
         })
       });
       
@@ -848,6 +934,139 @@ export default function App() {
     }
   };
 
+  const downloadPDFReport = () => {
+    // Determine the values to use from stats overall or sum of sitesSummary
+    let finalPages = 0;
+    let finalFiles = 0;
+    let finalMouzas = 0;
+    let siteName = "MULTAN";
+
+    if (stats?.overall) {
+      finalPages = stats.overall.total_pages || 0;
+      finalFiles = stats.overall.total_files || 0;
+      finalMouzas = stats.overall.total_mouza_scanned || 0;
+      const selectedSite = sitesSummary.find(s => String(s.id) === String(selectedSiteId));
+      if (selectedSite) {
+        siteName = selectedSite.name.toUpperCase();
+      }
+    } else {
+      // Sum across all sites
+      finalPages = sitesSummary.reduce((sum, s) => sum + (s.total_pages || 0), 0);
+      finalFiles = sitesSummary.reduce((sum, s) => sum + (s.total_files || 0), 0);
+      finalMouzas = sitesSummary.reduce((sum, s) => sum + (s.total_mouza_scanned || 0), 0) || sitesSummary.length;
+    }
+
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    // Color theme
+    const primaryIndigo = [79, 70, 229];
+    const borderSlate = [226, 232, 240];
+
+    // Background Top Header Band
+    doc.setFillColor(primaryIndigo[0], primaryIndigo[1], primaryIndigo[2]);
+    doc.rect(0, 0, 210, 48, 'F');
+
+    // Title Block Text with spacing
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(26);
+    doc.text(`${siteName} SCANNING`, 20, 25);
+    
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(199, 210, 254); // Light Indigo/Lavendar accent
+    doc.text("REAL-TIME RECONCILIATION & SCANNING REPORT", 20, 34);
+
+    // Dynamic Date Generation line banner
+    doc.setFillColor(30, 41, 59); // Slate 800 sub-band
+    doc.rect(0, 48, 210, 10, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9);
+    doc.setFont("Helvetica", "bold");
+    doc.text(`REPORT EXPORT DATE: ${new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`, 20, 54);
+
+    // Metrics container box
+    doc.setFillColor(248, 250, 252); // Slate 50 background for card metrics
+    doc.roundedRect(15, 75, 180, 115, 4, 4, 'F');
+    doc.setDrawColor(borderSlate[0], borderSlate[1], borderSlate[2]); // Slate 200 border
+    doc.setLineWidth(0.6);
+    doc.roundedRect(15, 75, 180, 115, 4, 4, 'D');
+
+    // Box Header Label
+    doc.setTextColor(100, 116, 139); // Slate 500
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("CORE METRIC MEASUREMENTS", 25, 88);
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.5);
+    doc.line(25, 93, 185, 93);
+
+    // Row 1: TOTAL PAGES SCANNED (Classic Indigo highlight)
+    doc.setTextColor(30, 41, 59); // Slate 800
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("TOTAL NUMBER OF PAGES SCANNED :", 25, 111);
+
+    doc.setTextColor(79, 70, 229); // Indigo values
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text(finalPages.toLocaleString(), 140, 111);
+
+    // Row 2: TOTAL REGISTERS SCANNED (Warm amber accent)
+    doc.setTextColor(30, 41, 59); 
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("TOTAL NUMBER OF REGISTERS SCANNED :", 25, 135);
+
+    doc.setTextColor(217, 119, 6); // Amber text
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text(finalFiles.toLocaleString(), 140, 135);
+
+    // Row 3: TOTAL MOUZAS SCANNED (Emerald green success highlight)
+    doc.setTextColor(30, 41, 59); 
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("TOTAL NUMBER OF MOUZA SCANNED :", 25, 159);
+
+    doc.setTextColor(5, 150, 105); // Emerald values
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text(finalMouzas.toLocaleString(), 140, 159);
+
+    // Card divider bar
+    doc.setDrawColor(226, 232, 240);
+    doc.line(25, 171, 185, 171);
+
+    // Card subtitle signature
+    doc.setTextColor(148, 163, 184); // Slate 400
+    doc.setFont("Helvetica", "italic");
+    doc.setFontSize(8.5);
+    doc.text("This data is processed authoritativly from the underlying site registers.", 25, 180);
+
+    // Disclaimer footer
+    doc.setTextColor(148, 163, 184);
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text("Punjab Land Record Scanning Project. Generated automatically inside AI Studio Workspace.", 15, 215);
+
+    // Signature Block line
+    doc.setDrawColor(203, 213, 225);
+    doc.line(135, 248, 195, 248);
+    
+    doc.setTextColor(71, 85, 105);
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.text("VERIFIED OFFICER SIGNATURE", 137, 254);
+
+    doc.save(`${siteName}_SCANNING_SUMMARY.pdf`);
+  };
+
   const handleAddSite = async () => {
     if (!newSiteName) return;
     try {
@@ -858,7 +1077,8 @@ export default function App() {
           name: newSiteName, 
           target_files: parseInt(newSiteTarget) || 0,
           rate: parseFloat(newSiteRate) || 0.3,
-          unit: newSiteUnit || 'Files'
+          unit: newSiteUnit || 'Files',
+          default_extra_pages: parseInt(newSiteDefaultExtraPages) || 0
         })
       });
       if (res.ok) {
@@ -866,6 +1086,7 @@ export default function App() {
         setNewSiteTarget('');
         setNewSiteRate('0.3');
         setNewSiteUnit('Files');
+        setNewSiteDefaultExtraPages('0');
         fetchSites();
         fetchSitesSummary();
       }
@@ -1808,16 +2029,6 @@ export default function App() {
                         className="bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 h-full text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                       />
                     </div>
-                    <div className="relative h-[42px]">
-                      <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input 
-                        type="number" 
-                        value={extraPages}
-                        onChange={(e) => setExtraPages(e.target.value)}
-                        placeholder="Extra Pages"
-                        className="bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 h-full w-32 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                      />
-                    </div>
                     <button 
                       onClick={() => saveAdminData()}
                       disabled={isSaving}
@@ -2664,7 +2875,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <button 
                         onClick={() => downloadReport('personal')}
                         disabled={isDownloading !== null}
@@ -2690,6 +2901,14 @@ export default function App() {
                         )}
                         <span className="text-sm font-bold text-white">{isDownloading === 'main' ? 'Downloading...' : 'Main Sheet'}</span>
                         <span className="text-[10px] text-white/60 uppercase mt-1">Excel Format</span>
+                      </button>
+                      <button 
+                        onClick={downloadPDFReport}
+                        className="flex flex-col items-center justify-center p-6 bg-rose-600 rounded-2xl hover:bg-rose-700 text-white transition-all group shadow-lg shadow-rose-550/20"
+                      >
+                        <Layers className="w-8 h-8 text-rose-200 mb-2 group-hover:text-white transition-colors" />
+                        <span className="text-sm font-bold">PDF Summary</span>
+                        <span className="text-[10px] text-rose-200 uppercase mt-1">Multan Scanning</span>
                       </button>
                     </div>
                   </div>
@@ -2746,6 +2965,16 @@ export default function App() {
                         />
                       </div>
                     </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-indigo-400 uppercase ml-1">Default Extra Pages (Daily)</label>
+                      <input 
+                        type="number" 
+                        placeholder="Default Extra Pages"
+                        value={newSiteDefaultExtraPages}
+                        onChange={(e) => setNewSiteDefaultExtraPages(e.target.value)}
+                        className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 font-bold"
+                      />
+                    </div>
                     <button 
                       onClick={handleAddSite}
                       className="w-full bg-indigo-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all"
@@ -2766,9 +2995,10 @@ export default function App() {
                           <th className="text-left pb-3">Site Name</th>
                           <th className="text-right pb-3">Rate</th>
                           <th className="text-right pb-3">Unit</th>
+                          <th className="text-right pb-3 text-indigo-500">Default EP</th>
+                          <th className="text-right pb-3 text-orange-600">Total EP</th>
                           <th className="text-right pb-3">Total Scanned</th>
                           <th className="text-right pb-3">Total Pages</th>
-                          <th className="text-right pb-3 text-orange-600">EP</th>
                           <th className="text-right pb-3">Action</th>
                         </tr>
                       </thead>
@@ -2866,9 +3096,53 @@ export default function App() {
                                 </div>
                               )}
                             </td>
+                            {/* Default EP inline configuration */}
+                            <td className="py-2 text-right text-slate-500 text-xs">
+                              {isUpdatingSiteDefaultEP === site.id ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <input 
+                                    type="number" 
+                                    value={newSiteDefaultEPValue}
+                                    onChange={(e) => setNewSiteDefaultEPValue(e.target.value)}
+                                    placeholder="0"
+                                    className="w-16 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                                    autoFocus
+                                  />
+                                  <button 
+                                    onClick={() => updateSiteDefaultEP(site.id, parseInt(newSiteDefaultEPValue) || 0)}
+                                    className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
+                                    title="Save"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button 
+                                    onClick={() => setIsUpdatingSiteDefaultEP(null)}
+                                    className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
+                                  <span className="font-bold text-indigo-600 font-mono">{site.default_extra_pages ?? 0}</span>
+                                  <button 
+                                    type="button"
+                                    onClick={() => {
+                                      setIsUpdatingSiteDefaultEP(site.id);
+                                      setNewSiteDefaultEPValue((site.default_extra_pages ?? 0).toString());
+                                    }}
+                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                    title="Edit Default Extra Pages"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-4 text-right font-mono text-orange-600">{site.extra_pages?.toLocaleString() || '0'}</td>
                             <td className="py-4 text-right font-mono text-slate-600">{site.total_files?.toLocaleString() || '0'}</td>
                             <td className="py-4 text-right font-mono text-slate-600">{site.total_pages?.toLocaleString() || '0'}</td>
-                            <td className="py-4 text-right font-mono text-orange-600">{site.extra_pages?.toLocaleString() || '0'}</td>
                             <td className="py-4 text-right">
                               {confirmDeleteSite === site.id ? (
                                 <div className="flex justify-end gap-1">
@@ -2901,14 +3175,19 @@ export default function App() {
                       <tfoot className="border-t-2 border-slate-100">
                         <tr className="bg-slate-50/50 font-bold">
                           <td className="py-4 text-slate-900 pl-4">GRAND TOTAL</td>
+                          <td className="py-4"></td>
+                          <td className="py-4"></td>
+                          <td className="py-4 text-right font-mono text-indigo-650">
+                            {sitesSummary.reduce((sum, s) => sum + (s.default_extra_pages || 0), 0).toLocaleString()}
+                          </td>
+                          <td className="py-4 text-right font-mono text-orange-700">
+                            {sitesSummary.reduce((sum, s) => sum + (s.extra_pages || 0), 0).toLocaleString()}
+                          </td>
                           <td className="py-4 text-right font-mono text-slate-900">
                             {sitesSummary.reduce((sum, s) => sum + (s.total_files || 0), 0).toLocaleString()}
                           </td>
                           <td className="py-4 text-right font-mono text-slate-900">
                             {sitesSummary.reduce((sum, s) => sum + (s.total_pages || 0), 0).toLocaleString()}
-                          </td>
-                          <td className="py-4 text-right font-mono text-orange-700">
-                            {sitesSummary.reduce((sum, s) => sum + (s.extra_pages || 0), 0).toLocaleString()}
                           </td>
                           <td className="py-4"></td>
                         </tr>
@@ -2917,6 +3196,76 @@ export default function App() {
                   </div>
                 </Card>
               </div>
+
+              {/* Edit Specific Previous Dates Extra Pages */}
+              <Card className="border-indigo-150 bg-slate-50/50 mt-8">
+                <div>
+                  <h4 className="font-bold flex items-center gap-2 text-indigo-900 text-sm md:text-base">
+                    <Layers className="w-5 h-5 text-indigo-600" />
+                    Edit Specific Previous Dates Extra Pages
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-1">Select any site and past date to view and update its custom daily extra pages.</p>
+                </div>
+
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Select Site</label>
+                    <select 
+                      value={editPastSiteId}
+                      onChange={(e) => setEditPastSiteId(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                    >
+                      <option value="">-- Choose a Site --</option>
+                      {sitesSummary.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Select Date</label>
+                    <input 
+                      type="date" 
+                      value={editPastDate}
+                      onChange={(e) => setEditPastDate(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 font-medium"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">
+                      Extra Pages 
+                      {isFetchingPastEP && <span className="text-indigo-600 text-[9px] uppercase ml-2 animate-pulse">(Loading...)</span>}
+                    </label>
+                    <input 
+                      type="number" 
+                      placeholder="EP Value"
+                      value={editPastEPValue}
+                      onChange={(e) => setEditPastEPValue(e.target.value)}
+                      disabled={isFetchingPastEP}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <button 
+                      onClick={handleSavePastEP}
+                      disabled={isSavingPastEP || isFetchingPastEP || !editPastSiteId}
+                      className="w-full bg-indigo-600 text-white py-2 px-4 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 h-[38px] flex items-center justify-center gap-2 shadow md:shadow-indigo-550/10"
+                    >
+                      {isSavingPastEP ? 'Saving...' : 'Update Extra Pages'}
+                    </button>
+                  </div>
+                </div>
+
+                {pastEPMessage && (
+                  <div className={`mt-4 px-4 py-2.5 rounded-xl text-xs font-medium ${
+                    pastEPMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                  }`}>
+                    {pastEPMessage.text}
+                  </div>
+                )}
+              </Card>
             </motion.div>
           ) : view === 'admin-operators' && hasPermission('admin-operators') ? (
             <motion.div 
