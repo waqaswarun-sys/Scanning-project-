@@ -81,6 +81,7 @@ export default function App() {
     'personal-records' | 
     'admin-data-entry' | 
     'admin-panel' |
+    'admin-management' |
     'apps'
   >('main-view');
   const [adminActiveTab, setAdminActiveTab] = useState<'downloads' | 'sites' | 'users' | 'operators' | 'settings' | 'records'>('downloads');
@@ -315,20 +316,20 @@ export default function App() {
   }, [adminDate, selectedSiteId, view]);
 
   useEffect(() => {
-    if (view === 'admin-panel') {
+    if (view === 'admin-panel' || view === 'admin-management') {
       fetchSitesSummary();
       fetchOperatorsSummary();
     }
   }, [view, selectedSiteId, operatorsMonth, operatorsFilterType, operatorsStartDate, operatorsEndDate]);
 
   useEffect(() => {
-    if (view === 'admin-panel' && editPastSiteId && editPastDate) {
+    if ((view === 'admin-panel' || view === 'admin-management') && editPastSiteId && editPastDate) {
       fetchSpecificDateEP(editPastSiteId, editPastDate);
     }
   }, [editPastSiteId, editPastDate, view]);
 
   useEffect(() => {
-    if (view === 'admin-panel' && !editPastSiteId && sitesSummary.length > 0) {
+    if ((view === 'admin-panel' || view === 'admin-management') && !editPastSiteId && sitesSummary.length > 0) {
       setEditPastSiteId(sitesSummary[0].id.toString());
     }
   }, [view, sitesSummary, editPastSiteId]);
@@ -336,16 +337,15 @@ export default function App() {
   // Select first available admin active tab if current tab is not permitted
   useEffect(() => {
     if (view === 'admin-panel') {
-      const permittedTabs: ('downloads' | 'sites' | 'users' | 'operators' | 'settings' | 'records')[] = [];
+      const permittedTabs: ('downloads' | 'sites' | 'users' | 'operators' | 'records')[] = [];
       if (hasPermission('admin-reports')) permittedTabs.push('downloads');
       if (hasPermission('admin-sites')) permittedTabs.push('sites');
       if (hasPermission('admin-operators')) permittedTabs.push('operators');
       if (currentUser?.role === 'admin') permittedTabs.push('users');
-      if (hasPermission('admin-management')) permittedTabs.push('settings');
       if (hasPermission('personal-records')) permittedTabs.push('records');
 
-      if (permittedTabs.length > 0 && !permittedTabs.includes(adminActiveTab)) {
-        setAdminActiveTab(permittedTabs[0]);
+      if (permittedTabs.length > 0 && !permittedTabs.includes(adminActiveTab as any)) {
+        setAdminActiveTab(permittedTabs[0] as any);
       }
     }
   }, [view, adminActiveTab, currentUser]);
@@ -952,11 +952,11 @@ export default function App() {
   // Ordered views for swipe navigation based on user permissions
   const getSwipeViews = () => {
     if (currentUser?.role === 'admin') {
-      return ['main-view', 'personal-records', 'admin-data-entry', 'admin-panel', 'apps'];
+      return ['main-view', 'personal-records', 'admin-data-entry', 'admin-panel', 'admin-management', 'apps'];
     }
-    const permOrder = ['main-view', 'personal-records', 'admin-data-entry', 'admin-panel', 'apps'];
+    const permOrder = ['main-view', 'personal-records', 'admin-data-entry', 'admin-panel', 'admin-management', 'apps'];
     return permOrder.filter(p => p === 'admin-panel' ? (
-      hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators') || hasPermission('admin-management')
+      hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators')
     ) : hasPermission(p) || p === 'apps');
   };
 
@@ -1058,13 +1058,10 @@ export default function App() {
             )}
             {hasPermission('personal-records') && (
               <button 
-                onClick={() => {
-                  setView('admin-panel');
-                  setAdminActiveTab('records');
-                }}
+                onClick={() => setView('personal-records')}
                 className={cn(
                   "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
-                  (view === 'admin-panel' && adminActiveTab === 'records') ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                  view === 'personal-records' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <TrendingUp className="w-3.5 h-3.5" />
@@ -1083,16 +1080,28 @@ export default function App() {
                 Entry
               </button>
             )}
-            {(hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators') || hasPermission('admin-management') || hasPermission('personal-records') || currentUser?.role === 'admin') && (
+            {(hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators') || currentUser?.role === 'admin') && (
               <button 
                 onClick={() => setView('admin-panel')}
                 className={cn(
                   "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
-                  (view === 'admin-panel' && adminActiveTab !== 'records') ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                  view === 'admin-panel' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <Sliders className="w-3.5 h-3.5" />
                 Admin Panel
+              </button>
+            )}
+            {hasPermission('admin-management') && (
+              <button 
+                onClick={() => setView('admin-management')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
+                  view === 'admin-management' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <Settings className="w-3.5 h-3.5" />
+                Site Configurations
               </button>
             )}
             <button 
@@ -1157,16 +1166,15 @@ export default function App() {
                                 Dashboard
                               </button>
                             )}
-                            {hasPermission('personal-records') && (
+                             {hasPermission('personal-records') && (
                               <button 
                                 onClick={() => { 
-                                  setView('admin-panel'); 
-                                  setAdminActiveTab('records');
+                                  setView('personal-records'); 
                                   setIsMenuOpen(false); 
                                 }}
                                 className={cn(
                                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
-                                  (view === 'admin-panel' && adminActiveTab === 'records') ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
+                                  view === 'personal-records' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
                                 )}
                               >
                                 <TrendingUp className="w-4 h-4" />
@@ -1176,7 +1184,7 @@ export default function App() {
                           </>
                         )}
 
-                        { (hasPermission('admin-data-entry') || hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators') || hasPermission('admin-management') || hasPermission('personal-records') || currentUser?.role === 'admin') && (
+                        { (hasPermission('admin-data-entry') || hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators') || hasPermission('admin-management') || currentUser?.role === 'admin') && (
                           <>
                             <div className="h-px bg-slate-100 my-2 mx-2" />
                             <div className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Admin Tools</div>
@@ -1193,16 +1201,28 @@ export default function App() {
                                 Data Entry
                               </button>
                             )}
-                            {(hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators') || hasPermission('admin-management') || hasPermission('personal-records') || currentUser?.role === 'admin') && (
+                            {(hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators') || currentUser?.role === 'admin') && (
                               <button 
                                 onClick={() => { setView('admin-panel'); setIsMenuOpen(false); }}
                                 className={cn(
                                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
-                                  (view === 'admin-panel' && adminActiveTab !== 'records') ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
+                                  view === 'admin-panel' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
                                 )}
                               >
                                 <Sliders className="w-4 h-4" />
                                 Admin Panel
+                              </button>
+                            )}
+                            {hasPermission('admin-management') && (
+                              <button 
+                                onClick={() => { setView('admin-management'); setIsMenuOpen(false); }}
+                                className={cn(
+                                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
+                                  view === 'admin-management' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
+                                )}
+                              >
+                                <Settings className="w-4 h-4" />
+                                Site Configurations
                               </button>
                             )}
                             <button 
@@ -1264,7 +1284,7 @@ export default function App() {
                           </button>
                         )}
                         {hasPermission('personal-records') && (
-                          <button onClick={() => { setView('admin-panel'); setAdminActiveTab('records'); setIsMenuOpen(false); }} className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all", (view === 'admin-panel' && adminActiveTab === 'records') ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50")}>
+                          <button onClick={() => { setView('personal-records'); setIsMenuOpen(false); }} className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all", view === 'personal-records' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50")}>
                             <TrendingUp className="w-4 h-4" /> Personal Records
                           </button>
                         )}
@@ -1860,21 +1880,7 @@ export default function App() {
                     Users Control
                   </button>
                 )}
-                {hasPermission('admin-management') && (
-                  <button
-                    type="button"
-                    onClick={() => setAdminActiveTab('settings')}
-                    className={cn(
-                      "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all",
-                      adminActiveTab === 'settings' 
-                        ? "bg-white text-indigo-600 shadow-sm border border-slate-200/40" 
-                        : "text-slate-500 hover:bg-slate-200/50 hover:text-slate-900"
-                    )}
-                  >
-                    <Settings className="w-4 h-4 text-rose-600" />
-                    Site Configurations
-                  </button>
-                )}
+
               </div>
 
               {/* Render Selected Tab content */}
@@ -2511,226 +2517,7 @@ export default function App() {
                   >
                     <UserControlsPage apiFetch={apiFetch} currentUser={currentUser} />
                   </motion.div>
-                )}
-
-                {adminActiveTab === 'settings' && hasPermission('admin-management') && (
-                  <motion.div
-                    key="tab-settings"
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -5 }}
-                    className="space-y-6"
-                  >
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                      <Card className="border-emerald-100 bg-emerald-50/30">
-                        <h4 className="font-bold mb-4 flex items-center gap-2 text-emerald-900">
-                          <Users className="w-4 h-4" /> Add Operator to {sites.find(s => s.id === selectedSiteId)?.name}
-                        </h4>
-                        <div className="space-y-4">
-                          <input 
-                            type="text" 
-                            placeholder="Operator Name"
-                            value={newEmployeeName}
-                            onChange={(e) => setNewEmployeeName(e.target.value)}
-                            className="w-full bg-white border border-emerald-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20"
-                          />
-                          <button 
-                            type="button"
-                            onClick={handleAddEmployee}
-                            className="w-full bg-emerald-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all font-inherit"
-                          >
-                            Add Operator
-                          </button>
-                          {addEmployeeMessage && (
-                            <div className={cn(
-                              "px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2",
-                              addEmployeeMessage.type === 'success' ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"
-                            )}>
-                              {addEmployeeMessage.type === 'success' ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
-                              {addEmployeeMessage.text}
-                            </div>
-                          )}
-                        </div>
-                      </Card>
-
-                      <Card className="border-blue-100 bg-blue-50/30">
-                        <h4 className="font-bold mb-4 flex items-center gap-2 text-blue-900">
-                          <TrendingUp className="w-4 h-4" /> Site Settings
-                        </h4>
-                        <div className="space-y-4">
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-blue-600 uppercase">Target {stats?.overall.unit || 'Files'}</label>
-                            <div className="space-y-2">
-                              <input 
-                                type="number" 
-                                placeholder={stats?.overall.target_files?.toString() || '0'}
-                                value={updateTargetValue}
-                                onChange={(e) => setUpdateTargetValue(e.target.value)}
-                                className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20"
-                              />
-                              <button 
-                                type="button"
-                                onClick={handleUpdateTarget}
-                                className="w-full bg-blue-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-blue-700 transition-all font-inherit"
-                              >
-                                Update Target
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2 pt-2 border-t border-blue-100/50">
-                            <label className="text-[10px] font-bold text-blue-600 uppercase">Total Mouza Scanned</label>
-                            <div className="space-y-2">
-                              <input 
-                                type="number" 
-                                placeholder={(stats?.overall.total_mouza_scanned !== undefined ? stats.overall.total_mouza_scanned : 0).toString()}
-                                value={updateMouzaValue}
-                                onChange={(e) => setUpdateMouzaValue(e.target.value)}
-                                className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20"
-                              />
-                              <button 
-                                type="button"
-                                onClick={handleUpdateMouza}
-                                className="w-full bg-indigo-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all font-inherit"
-                              >
-                                Update Mouza
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-
-                      <Card className="border-indigo-100 bg-indigo-50/30">
-                        <h4 className="font-bold mb-4 flex items-center gap-2 text-indigo-950">
-                          <CalendarIcon className="w-4 h-4 text-indigo-600" /> Project Forecast
-                        </h4>
-                        {forecast && typeof forecast === 'object' ? (
-                          <div className="space-y-4">
-                            <div className="flex flex-col">
-                              <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Estimated Completion</span>
-                              <span className="text-xl font-bold text-indigo-900">{forecast.date}</span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="p-3 bg-white rounded-xl border border-indigo-100">
-                                <span className="block text-[10px] font-bold text-slate-400 uppercase">Days Left</span>
-                                <span className="text-lg font-bold text-indigo-600">{forecast.days}</span>
-                              </div>
-                              <div className="p-3 bg-white rounded-xl border border-indigo-100">
-                                <span className="block text-[10px] font-bold text-slate-400 uppercase">Avg. Rate</span>
-                                <span className="text-lg font-bold text-indigo-600">{forecast.rate} <span className="text-xs font-normal">f/d</span></span>
-                              </div>
-                            </div>
-                            <p className="text-[10px] text-slate-500 italic">
-                              * Based on scanning rate of the last 7 active days.
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="py-8 text-center text-slate-400 text-sm italic">
-                            {forecast || "Insufficient data for forecast"}
-                          </div>
-                        )}
-                      </Card>
-
-                      <Card className="lg:col-span-3 border-slate-200 bg-white">
-                        <h4 className="font-bold mb-4 flex items-center gap-2 text-slate-900">
-                          <Users className="w-4 h-4 text-indigo-600" /> Manage Operators
-                        </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                          {adminData.filter(op => op.is_active).map(operator => (
-                            <div key={operator.employee_id} className="flex flex-col p-3 border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors gap-2">
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm font-medium text-slate-700">{operator.name}</span>
-                                <div className="flex items-center gap-1">
-                                  {confirmDeleteEmployeeId === operator.employee_id ? (
-                                    <div className="flex gap-1">
-                                      <button 
-                                        type="button"
-                                        onClick={() => handleDeleteEmployee(operator.employee_id)}
-                                        className="p-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all font-inherit"
-                                        title="Confirm Deactivate"
-                                      >
-                                        <Save className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button 
-                                        type="button"
-                                        onClick={() => setConfirmDeleteEmployeeId(null)}
-                                        className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 transition-all font-inherit"
-                                        title="Cancel"
-                                      >
-                                        <ChevronLeft className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <button 
-                                        type="button"
-                                        onClick={() => {
-                                          setIsUpdatingRate(operator.employee_id);
-                                          setNewRateValue((operator as any).rate_per_page?.toString() || '0.30');
-                                        }}
-                                        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                                        title="Set Rate"
-                                      >
-                                        <TrendingUp className="w-4 h-4" />
-                                      </button>
-                                      <button 
-                                        type="button"
-                                        onClick={() => setConfirmDeleteEmployeeId(operator.employee_id)}
-                                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                                        title="Remove Operator"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                              
-                              {isUpdatingRate === operator.employee_id && (
-                                <div className="flex items-center gap-2 mt-2">
-                                  <input 
-                                    type="number" 
-                                    step="0.001"
-                                    value={newRateValue}
-                                    onChange={(e) => setNewRateValue(e.target.value)}
-                                    className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-indigo-500"
-                                    placeholder="Rate per page"
-                                    autoFocus
-                                  />
-                                  <button 
-                                    type="button"
-                                    onClick={() => updateOperatorRate(operator.employee_id, parseFloat(newRateValue) || 0)}
-                                    className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-inherit"
-                                  >
-                                    <Check className="w-3 h-3" />
-                                  </button>
-                                  <button 
-                                    type="button"
-                                    onClick={() => setIsUpdatingRate(null)}
-                                    className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 font-inherit"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              )}
-                              
-                              <div className="text-[10px] font-bold text-slate-400 uppercase">
-                                Rate: Rs {((operator as any).rate_per_page !== undefined && (operator as any).rate_per_page !== null) 
-                                  ? Number((operator as any).rate_per_page).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) 
-                                  : '0.30'} / page
-                              </div>
-                            </div>
-                          ))}
-                          {adminData.filter(op => op.is_active).length === 0 && (
-                            <div className="col-span-full text-center py-4 text-slate-400 text-sm">
-                              No operators found for this site.
-                            </div>
-                          )}
-                        </div>
-                      </Card>
-                    </div>
-                  </motion.div>
-                )}
+                  )}
 
                 {adminActiveTab === 'records' && hasPermission('personal-records') && (
                   <motion.div
@@ -2780,6 +2567,284 @@ export default function App() {
                   </motion.div>
                 )}
               </AnimatePresence>
+            </motion.div>
+          ) : view === 'personal-records' && hasPermission('personal-records') ? (
+            <motion.div 
+              key="personal-records"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-8"
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between pb-2 gap-4 border-b border-slate-100">
+                <div>
+                  <h2 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                    <TrendingUp className="w-8 h-8 text-indigo-600" />
+                    Personal Records
+                  </h2>
+                  <p className="text-slate-500 font-medium">Your current progress, files, scanned pages, and accumulated extra pages</p>
+                </div>
+              </div>
+
+              <Card className="lg:col-span-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total {stats?.overall.unit || 'Files'} Scanned</span>
+                    {(!stats || stats.mode !== 'personal') ? (
+                      <div className="h-9 w-24 bg-slate-200 animate-pulse rounded-lg mt-1" />
+                    ) : (
+                      <span className="text-3xl font-bold text-slate-900">{stats?.overall.total_files?.toLocaleString()}</span>
+                    )}
+                  </div>
+                  <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100">
+                    <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block mb-1">Total Pages Scanned</span>
+                    {(!stats || stats.mode !== 'personal') ? (
+                      <div className="h-9 w-24 bg-indigo-200 animate-pulse rounded-lg mt-1" />
+                    ) : (
+                      <span className="text-3xl font-bold text-indigo-900">{stats?.overall.total_pages?.toLocaleString()}</span>
+                    )}
+                  </div>
+                  <div className="p-6 bg-orange-50 rounded-2xl border border-orange-100">
+                    <span className="text-[10px] font-bold text-orange-600 uppercase tracking-wider block mb-1">EP</span>
+                    {(!stats || stats.mode !== 'personal') ? (
+                      <div className="h-9 w-24 bg-orange-200 animate-pulse rounded-lg mt-1" />
+                    ) : (
+                      <span className="text-3xl font-bold text-orange-900">
+                        {stats.monthly?.reduce((sum, m) => sum + (m.extra_pages || 0), 0).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </motion.div>
+          ) : view === 'admin-management' && hasPermission('admin-management') ? (
+            <motion.div 
+              key="admin-management"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-8"
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between pb-2 gap-4 border-b border-slate-100">
+                <div>
+                  <h2 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                    <Settings className="w-8 h-8 text-indigo-600" />
+                    Site Configurations
+                  </h2>
+                  <p className="text-slate-500 font-medium">Manage sites, options, settings, forecasting, operators, and parameters</p>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  <Card className="border-emerald-100 bg-emerald-50/30">
+                    <h4 className="font-bold mb-4 flex items-center gap-2 text-emerald-900">
+                      <Users className="w-4 h-4" /> Add Operator to {sites.find(s => s.id === selectedSiteId)?.name}
+                    </h4>
+                    <div className="space-y-4">
+                      <input 
+                        type="text" 
+                        placeholder="Operator Name"
+                        value={newEmployeeName}
+                        onChange={(e) => setNewEmployeeName(e.target.value)}
+                        className="w-full bg-white border border-emerald-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                      <button 
+                        type="button"
+                        onClick={handleAddEmployee}
+                        className="w-full bg-emerald-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all font-inherit"
+                      >
+                        Add Operator
+                      </button>
+                      {addEmployeeMessage && (
+                        <div className={cn(
+                          "px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2",
+                          addEmployeeMessage.type === 'success' ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"
+                        )}>
+                          {addEmployeeMessage.type === 'success' ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                          {addEmployeeMessage.text}
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+
+                  <Card className="border-blue-100 bg-blue-50/30">
+                    <h4 className="font-bold mb-4 flex items-center gap-2 text-blue-900">
+                      <TrendingUp className="w-4 h-4" /> Site Settings
+                    </h4>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-blue-600 uppercase">Target {stats?.overall.unit || 'Files'}</label>
+                        <div className="space-y-2">
+                          <input 
+                            type="number" 
+                            placeholder={stats?.overall.target_files?.toString() || '0'}
+                            value={updateTargetValue}
+                            onChange={(e) => setUpdateTargetValue(e.target.value)}
+                            className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20"
+                          />
+                          <button 
+                            type="button"
+                            onClick={handleUpdateTarget}
+                            className="w-full bg-blue-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-blue-700 transition-all font-inherit"
+                          >
+                            Update Target
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 pt-2 border-t border-blue-100/50">
+                        <label className="text-[10px] font-bold text-blue-600 uppercase">Total Mouza Scanned</label>
+                        <div className="space-y-2">
+                          <input 
+                            type="number" 
+                            placeholder={(stats?.overall.total_mouza_scanned !== undefined ? stats.overall.total_mouza_scanned : 0).toString()}
+                            value={updateMouzaValue}
+                            onChange={(e) => setUpdateMouzaValue(e.target.value)}
+                            className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20"
+                          />
+                          <button 
+                            type="button"
+                            onClick={handleUpdateMouza}
+                            className="w-full bg-indigo-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all font-inherit"
+                          >
+                            Update Mouza
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card className="border-indigo-100 bg-indigo-50/30">
+                    <h4 className="font-bold mb-4 flex items-center gap-2 text-indigo-950">
+                      <CalendarIcon className="w-4 h-4 text-indigo-600" /> Project Forecast
+                    </h4>
+                    {forecast && typeof forecast === 'object' ? (
+                      <div className="space-y-4">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Estimated Completion</span>
+                          <span className="text-xl font-bold text-indigo-900">{forecast.date}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="p-3 bg-white rounded-xl border border-indigo-100">
+                            <span className="block text-[10px] font-bold text-slate-400 uppercase">Days Left</span>
+                            <span className="text-lg font-bold text-indigo-600">{forecast.days}</span>
+                          </div>
+                          <div className="p-3 bg-white rounded-xl border border-indigo-100">
+                            <span className="block text-[10px] font-bold text-slate-400 uppercase">Avg. Rate</span>
+                            <span className="text-lg font-bold text-indigo-600">{forecast.rate} <span className="text-xs font-normal">f/d</span></span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-500 italic">
+                          * Based on scanning rate of the last 7 active days.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="py-8 text-center text-slate-400 text-sm italic">
+                        {forecast || "Insufficient data for forecast"}
+                      </div>
+                    )}
+                  </Card>
+
+                  <Card className="lg:col-span-3 border-slate-200 bg-white">
+                    <h4 className="font-bold mb-4 flex items-center gap-2 text-slate-900">
+                      <Users className="w-4 h-4 text-indigo-600" /> Manage Operators
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                      {adminData.filter(op => op.is_active).map(operator => (
+                        <div key={operator.employee_id} className="flex flex-col p-3 border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors gap-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium text-slate-700">{operator.name}</span>
+                            <div className="flex items-center gap-1">
+                              {confirmDeleteEmployeeId === operator.employee_id ? (
+                                <div className="flex gap-1">
+                                  <button 
+                                    type="button"
+                                    onClick={() => handleDeleteEmployee(operator.employee_id)}
+                                    className="p-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all font-inherit"
+                                    title="Confirm Deactivate"
+                                  >
+                                    <Save className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button 
+                                    type="button"
+                                    onClick={() => setConfirmDeleteEmployeeId(null)}
+                                    className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 transition-all font-inherit"
+                                    title="Cancel"
+                                  >
+                                    <ChevronLeft className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <button 
+                                    type="button"
+                                    onClick={() => {
+                                      setIsUpdatingRate(operator.employee_id);
+                                      setNewRateValue((operator as any).rate_per_page?.toString() || '0.30');
+                                    }}
+                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                    title="Set Rate"
+                                  >
+                                    <TrendingUp className="w-4 h-4" />
+                                  </button>
+                                  <button 
+                                    type="button"
+                                    onClick={() => setConfirmDeleteEmployeeId(operator.employee_id)}
+                                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                    title="Remove Operator"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {isUpdatingRate === operator.employee_id && (
+                            <div className="flex items-center gap-2 mt-2">
+                              <input 
+                                type="number" 
+                                step="0.001"
+                                value={newRateValue}
+                                onChange={(e) => setNewRateValue(e.target.value)}
+                                className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                                placeholder="Rate per page"
+                                autoFocus
+                              />
+                              <button 
+                                type="button"
+                                onClick={() => updateOperatorRate(operator.employee_id, parseFloat(newRateValue) || 0)}
+                                className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-inherit"
+                              >
+                                <Check className="w-3 h-3" />
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={() => setIsUpdatingRate(null)}
+                                className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 font-inherit"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                          
+                          <div className="text-[10px] font-bold text-slate-400 uppercase">
+                            Rate: Rs {((operator as any).rate_per_page !== undefined && (operator as any).rate_per_page !== null) 
+                              ? Number((operator as any).rate_per_page).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) 
+                              : '0.30'} / page
+                          </div>
+                        </div>
+                      ))}
+                      {adminData.filter(op => op.is_active).length === 0 && (
+                        <div className="col-span-full text-center py-4 text-slate-400 text-sm">
+                          No operators found for this site.
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                </div>
+              </div>
             </motion.div>
           ) : view === 'user-controls' ? (
             <motion.div 
