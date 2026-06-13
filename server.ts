@@ -1493,6 +1493,69 @@ async function startServer() {
     }
   });
 
+  app.post("/api/mouza-status", requireAuth, async (req: any, res) => {
+    const { siteId, mouzaName, status } = req.body;
+    if (!siteId || !mouzaName || !status) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+    if (!checkSiteAccess(req.user, siteId, 'admin-data-entry')) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    try {
+      const normalized = mouzaName.trim().toUpperCase();
+      const docId = `${siteId}_${normalized}`;
+      await db.collection('mouza_statuses').doc(docId).set({
+        site_id: siteId,
+        mouza_name: mouzaName.trim(),
+        status: status,
+        updated_at: FieldValue.serverTimestamp()
+      }, { merge: true });
+
+      clearCache(`mouza-statuses-${siteId}`);
+      clearCache(`mouzas-${siteId}`);
+      clearCache(`stats-${siteId}-main`);
+      clearCache(`stats-${siteId}-personal`);
+      clearCache(`stats-${siteId}`);
+      clearCache('sites-summary');
+
+      res.json({ success: true, mouzaName, status });
+    } catch (err) {
+      console.error('[MOUZA_STATUS] Update error:', err);
+      res.status(500).json({ error: "Failed to update Mouza status" });
+    }
+  });
+
+  app.get("/api/mouza-statuses", requireAuth, async (req: any, res) => {
+    const { siteId } = req.query;
+    if (!siteId) {
+      return res.status(400).json({ error: "Missing siteId" });
+    }
+    if (!checkSiteAccess(req.user, siteId as string, 'admin-data-entry') && !checkSiteAccess(req.user, siteId as string, 'mouza-details')) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    try {
+      const cacheKey = `mouza-statuses-${siteId}`;
+      const cached = getCache(cacheKey);
+      if (cached) return res.json(cached);
+
+      const snapshot = await db.collection('mouza_statuses').where('site_id', '==', siteId).get();
+      const list = snapshot.docs.map(doc => ({
+        id: doc.id,
+        mouza_name: doc.data().mouza_name,
+        status: doc.data().status,
+        site_id: doc.data().site_id
+      }));
+
+      setCache(cacheKey, list);
+      res.json(list);
+    } catch (err) {
+      console.error('[MOUZA_STATUS] Fetch error:', err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.get("/api/mouzas", requireAuth, async (req: any, res) => {
     const { siteId } = req.query;
     const hasMainView = checkSiteAccess(req.user, siteId as string, 'main-view');
@@ -1500,6 +1563,10 @@ async function startServer() {
     if (!siteId || (!hasMainView && !hasMouzaDetails)) {
       return res.status(403).json({ error: "Access denied" });
     }
+
+    const cacheKey = `mouzas-${siteId}`;
+    const cached = getCache(cacheKey);
+    if (cached) return res.json(cached);
 
     try {
       // Fetch all scanning data for this site containing mouzas
@@ -1516,8 +1583,17 @@ async function startServer() {
         employeeMap.set(doc.id, doc.data().name);
       });
 
+      // Fetch Mouza overall statuses
+      const statusesSnapshot = await db.collection('mouza_statuses')
+        .where('site_id', '==', siteId)
+        .get();
+      const statusMap = new Map();
+      statusesSnapshot.docs.forEach(doc => {
+        statusMap.set(doc.data().mouza_name.trim().toUpperCase(), doc.data().status);
+      });
+
       // Group mouzas
-      const mouzaGroups: { [mouzaName: string]: { name: string; RHZ: any[]; Mutation: any[]; Shajra: any[] } } = {};
+      const mouzaGroups: { [mouzaName: string]: { name: string; status: string; RHZ: any[]; Mutation: any[]; Shajra: any[] } } = {};
 
       // Sort documents chronologically by date ascending so newer dates overwrite older dates
       const sortedDocs = [...scanningSnapshot.docs].sort((a, b) => {
@@ -1535,9 +1611,12 @@ async function startServer() {
           data.mouzas.forEach((m: any) => {
             if (!m || !m.name) return;
             const normalizedName = m.name.trim().toUpperCase();
+            const definedStatus = statusMap.get(normalizedName) || 'In Scanning';
+
             if (!mouzaGroups[normalizedName]) {
               mouzaGroups[normalizedName] = {
                 name: m.name.trim(), // Keep original casing
+                status: definedStatus,
                 RHZ: [],
                 Mutation: [],
                 Shajra: []
@@ -1552,23 +1631,16 @@ async function startServer() {
               const existingIndex = targetGroup[typeKey].findIndex((item: any) => item.years.trim().toUpperCase() === yearsVal.toUpperCase());
               
               const newQty = isNaN(Number(m.quantity)) ? 1 : Number(m.quantity);
-              const newStatus = m.status || 'In Scanning';
               const newDate = date || '';
 
               if (existingIndex > -1) {
                 const existing = targetGroup[typeKey][existingIndex];
                 const isNewer = !existing.date || newDate >= existing.date;
-                let finalStatus = isNewer ? newStatus : existing.status;
-                
-                // If either is Complete, it's Complete
-                if (existing.status === 'Complete' || newStatus === 'Complete') {
-                  finalStatus = 'Complete';
-                }
 
                 targetGroup[typeKey][existingIndex] = {
                   years: yearsVal,
                   quantity: isNewer ? newQty : existing.quantity,
-                  status: finalStatus,
+                  status: definedStatus,
                   operator: isNewer ? operatorName : existing.operator,
                   date: isNewer ? newDate : existing.date
                 };
@@ -1576,7 +1648,7 @@ async function startServer() {
                 targetGroup[typeKey].push({
                   years: yearsVal,
                   quantity: newQty,
-                  status: newStatus,
+                  status: definedStatus,
                   operator: operatorName,
                   date: newDate
                 });
@@ -1588,6 +1660,7 @@ async function startServer() {
 
       // Convert to array and sort by Mouza Name
       const list = Object.values(mouzaGroups).sort((a, b) => a.name.localeCompare(b.name));
+      setCache(cacheKey, list);
       res.json(list);
     } catch (err) {
       console.error('[MOUZAS] Error fetching:', err);

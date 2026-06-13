@@ -25,7 +25,8 @@ import {
   Globe,
   Edit,
   Map,
-  Search
+  Search,
+  RotateCcw
 } from 'lucide-react';
 import UserControlsPage from './components/UserControlsPage';
 import AppsPage from './components/AppsPage';
@@ -157,6 +158,7 @@ export default function App() {
   const [mouzasLoading, setMouzasLoading] = useState(false);
   const [mouzaSearch, setMouzaSearch] = useState('');
   const [selectedMouzaFilter, setSelectedMouzaFilter] = useState('all');
+  const [updatingMouzaStatusName, setUpdatingMouzaStatusName] = useState<string | null>(null);
 
   // Wizard Data Entry State
   const [selectedOperatorIndex, setSelectedOperatorIndex] = useState<number>(0);
@@ -631,6 +633,32 @@ export default function App() {
     }
   };
 
+  const handleSetMouzaStatus = async (mouzaName: string, status: 'In Scanning' | 'Complete') => {
+    if (!selectedSiteId) return;
+    setUpdatingMouzaStatusName(mouzaName);
+    try {
+      const res = await apiFetch('/api/mouza-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          siteId: selectedSiteId,
+          mouzaName,
+          status
+        })
+      });
+      if (res.ok) {
+        await fetchMouzasData();
+        await fetchStats(view === 'admin-data-entry' ? 'personal' : 'main');
+      } else {
+        alert("Failed to update Mouza status");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setUpdatingMouzaStatusName(null);
+    }
+  };
+
   const fetchAdminData = async () => {
     if (!selectedSiteId) return;
     setAdminData([]);
@@ -935,11 +963,11 @@ export default function App() {
     }
   };
 
-  const downloadPDFReport = () => {
+  const downloadPDFReport = async () => {
     // Pages, registers/files, and mouzas count taken directly from stats overall (which corresponds to dashboard)
-    const finalPages = stats?.overall?.total_pages || 0;
-    const finalFiles = stats?.overall?.total_files || 0;
-    const finalMouzas = stats?.overall?.total_mouza_scanned || 0;
+    let finalPages = stats?.overall?.total_pages || 0;
+    let finalFiles = stats?.overall?.total_files || 0;
+    let finalMouzas = stats?.overall?.total_mouza_scanned || 0;
     let siteName = "MULTAN";
 
     const selectedSite = sitesSummary.find(s => String(s.id) === String(selectedSiteId));
@@ -947,7 +975,32 @@ export default function App() {
       siteName = selectedSite.name.toUpperCase();
     }
 
-    const doc = new jsPDF({
+    try {
+      // Fetch latest overall main statistics to match the Dashboard page "Scanned Pages" precisely
+      const res = await apiFetch(`/api/stats/${selectedSiteId}?mode=main`);
+      if (res.ok) {
+        const mainStats = await res.json();
+        if (mainStats && mainStats.overall) {
+          finalPages = mainStats.overall.total_pages || 0;
+          finalFiles = mainStats.overall.total_files || 0;
+          finalMouzas = mainStats.overall.total_mouza_scanned || 0;
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching main stats for PDF:", e);
+    }
+
+    // Resolve jsPDF constructor safely to bypass Vite bundle compatibility issues
+    let ResolvedConstructor = jsPDF as any;
+    if (typeof ResolvedConstructor !== 'function') {
+      if (ResolvedConstructor && ResolvedConstructor.jsPDF) {
+        ResolvedConstructor = ResolvedConstructor.jsPDF;
+      } else if (ResolvedConstructor && ResolvedConstructor.default) {
+        ResolvedConstructor = ResolvedConstructor.default;
+      }
+    }
+
+    const doc = new ResolvedConstructor({
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4'
@@ -2222,7 +2275,7 @@ export default function App() {
                                       {/* Group Header: Mouza Name Input & Actions & Mouza-level Status */}
                                       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 mb-4 border-b border-slate-100">
                                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:max-w-xl">
-                                          <div className="flex items-center gap-2 w-full sm:max-w-xs">
+                                          <div className="flex items-center gap-2 w-full sm:max-w-md">
                                             <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100 shrink-0">
                                               <Map className="w-4 h-4" />
                                             </div>
@@ -2240,40 +2293,6 @@ export default function App() {
                                               ))}
                                             </datalist>
                                           </div>
-
-                                          {/* Consolidated Mouza-Level Status Selection */}
-                                          {(() => {
-                                            const isGroupComplete = group.entries.length > 0 && group.entries.every(e => e.record.status === 'Complete');
-                                            return (
-                                              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 p-1 rounded-xl shrink-0">
-                                                <span className="text-[9px] uppercase font-black text-slate-400 px-2 tracking-wider">Mouza Status:</span>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleUpdateMouzaGroupStatus(group.indices, 'In Scanning')}
-                                                  className={cn(
-                                                    "py-1 px-3 rounded-lg text-xs font-bold transition-all",
-                                                    !isGroupComplete
-                                                      ? "bg-amber-50 text-amber-700 border border-amber-200/40 shadow-xs font-black"
-                                                      : "bg-transparent text-slate-400 hover:text-slate-600"
-                                                  )}
-                                                >
-                                                  Scanning
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleUpdateMouzaGroupStatus(group.indices, 'Complete')}
-                                                  className={cn(
-                                                    "py-1 px-3 rounded-lg text-xs font-bold transition-all",
-                                                    isGroupComplete
-                                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200/40 shadow-xs font-black"
-                                                      : "bg-transparent text-slate-400 hover:text-slate-600"
-                                                  )}
-                                                >
-                                                  Complete
-                                                </button>
-                                              </div>
-                                            );
-                                          })()}
                                         </div>
 
                                         <div className="flex items-center gap-2 shrink-0">
@@ -2429,6 +2448,118 @@ export default function App() {
                   </div>
                 )}
               </Card>
+
+              {/* Mouza Scanning Status Board Section */}
+              {(() => {
+                const inScanningList = mouzasData.filter(m => m.status !== 'Complete');
+                const completedList = mouzasData.filter(m => m.status === 'Complete');
+
+                return (
+                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                      <div>
+                        <h4 className="text-base font-extrabold text-indigo-900 flex items-center gap-2">
+                          <Globe className="w-5 h-5 text-indigo-600" />
+                          Mouza Scanning Status Board
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-1">Manage and track whether a Mouza's overall scanning process is In Progress or Completed</p>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-150 px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-500 flex items-center gap-1.5 self-start sm:self-center">
+                        <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
+                        <span>{mouzasData.length} Total Mouzas</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Left Column: In Scanning List */}
+                      <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-5 space-y-4">
+                        <h5 className="text-xs font-black text-amber-600 uppercase tracking-wider flex items-center gap-1.5 pl-1">
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                          ⏳ In Scanning ({inScanningList.length})
+                        </h5>
+                        <div className="divide-y divide-slate-100 max-h-[380px] overflow-y-auto pr-2 space-y-2">
+                          {inScanningList.length === 0 ? (
+                            <div className="py-8 text-center text-xs text-slate-400 font-bold bg-white border border-slate-100 rounded-2xl">
+                              No Mouzas in Scanning status.
+                            </div>
+                          ) : (
+                            inScanningList.map((m) => {
+                              const isUpdating = updatingMouzaStatusName === m.name;
+                              const regCount = (m.RHZ?.length || 0) + (m.Mutation?.length || 0) + (m.Shajra?.length || 0);
+                              return (
+                                <div key={m.name} className="py-3 px-4 bg-white border border-slate-100 rounded-xl flex items-center justify-between gap-3 shadow-xs hover:border-slate-200 transition-colors">
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-extrabold text-slate-800">{m.name}</span>
+                                    <span className="text-[10px] text-slate-400 font-bold mt-0.5 font-mono">
+                                      {regCount} Registers entered
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetMouzaStatus(m.name, 'Complete')}
+                                    disabled={isUpdating}
+                                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-800 px-3 h-8 rounded-xl text-xs font-bold transition-colors border border-emerald-150 flex items-center gap-1 disabled:opacity-50 shrink-0 cursor-pointer"
+                                  >
+                                    {isUpdating ? "..." : (
+                                      <>
+                                        <Check className="w-3.5 h-3.5" />
+                                        Complete
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right Column: Completed List */}
+                      <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-5 space-y-4">
+                        <h5 className="text-xs font-black text-emerald-600 uppercase tracking-wider flex items-center gap-1.5 pl-1">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                          ✅ Completed ({completedList.length})
+                        </h5>
+                        <div className="divide-y divide-slate-100 max-h-[380px] overflow-y-auto pr-2 space-y-2">
+                          {completedList.length === 0 ? (
+                            <div className="py-8 text-center text-xs text-slate-400 font-bold bg-white border border-slate-100 rounded-2xl">
+                              No Mouzas marked as Completed yet.
+                            </div>
+                          ) : (
+                            completedList.map((m) => {
+                              const isUpdating = updatingMouzaStatusName === m.name;
+                              const regCount = (m.RHZ?.length || 0) + (m.Mutation?.length || 0) + (m.Shajra?.length || 0);
+                              return (
+                                <div key={m.name} className="py-3 px-4 bg-white border border-slate-100 rounded-xl flex items-center justify-between gap-3 shadow-xs hover:border-slate-200 transition-colors">
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-extrabold text-slate-505 line-through">{m.name}</span>
+                                    <span className="text-[10px] text-slate-400 font-bold mt-0.5 font-mono">
+                                      {regCount} Registers entered
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetMouzaStatus(m.name, 'In Scanning')}
+                                    disabled={isUpdating}
+                                    className="bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-800 px-3 h-8 rounded-xl text-xs font-bold transition-colors border border-amber-150 flex items-center gap-1 disabled:opacity-50 shrink-0 cursor-pointer"
+                                  >
+                                    {isUpdating ? "..." : (
+                                      <>
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                        Undo
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </motion.div>
           ) : view === 'mouza-details' && hasPermission('mouza-details') ? (
             <motion.div 
