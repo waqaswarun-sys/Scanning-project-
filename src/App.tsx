@@ -710,13 +710,14 @@ export default function App() {
           setTimeout(() => setCopyFeedback(null), 4000);
         }
       } else {
-        setCopyFeedback("Failed to fetch last Mouzas.");
-        setTimeout(() => setCopyFeedback(null), 4000);
+        const errText = await res.text().catch(() => "");
+        setCopyFeedback(`Failed to fetch last Mouzas: ${res.status} ${errText}`);
+        setTimeout(() => setCopyFeedback(null), 6000);
       }
     } catch (err) {
-      console.error(err);
-      setCopyFeedback("Error copying last Mouzas.");
-      setTimeout(() => setCopyFeedback(null), 4000);
+      console.error("DEBUG last-mouzas err:", err);
+      setCopyFeedback(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      setTimeout(() => setCopyFeedback(null), 6000);
     } finally {
       setIsCopyingLastMouzas(false);
     }
