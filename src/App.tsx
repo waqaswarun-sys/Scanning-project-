@@ -26,7 +26,8 @@ import {
   Edit,
   Map,
   Search,
-  RotateCcw
+  RotateCcw,
+  Sliders
 } from 'lucide-react';
 import UserControlsPage from './components/UserControlsPage';
 import AppsPage from './components/AppsPage';
@@ -79,13 +80,10 @@ export default function App() {
     'main-view' | 
     'personal-records' | 
     'admin-data-entry' | 
-    'admin-management' | 
-    'admin-reports' | 
-    'admin-sites' |
-    'admin-operators' |
-    'user-controls' |
+    'admin-panel' |
     'apps'
   >('main-view');
+  const [adminActiveTab, setAdminActiveTab] = useState<'downloads' | 'sites' | 'users' | 'operators' | 'settings' | 'records'>('downloads');
   const [sites, setSites] = useState<Site[]>([]);
   const [sitesSummary, setSitesSummary] = useState<any[]>([]);
   const [operatorsSummary, setOperatorsSummary] = useState<any[]>([]);
@@ -294,7 +292,7 @@ export default function App() {
     }
   }, [isAuthenticated]);
 
-  const currentMode = (view === 'main-view' || view === 'admin-reports') ? 'main' : 'personal';
+  const currentMode = (view === 'personal-records' || (view === 'admin-panel' && adminActiveTab === 'records')) ? 'personal' : 'main';
 
   useEffect(() => {
     if (selectedSiteId) {
@@ -304,7 +302,7 @@ export default function App() {
   }, [selectedSiteId, currentMode]);
 
   useEffect(() => {
-    if (selectedSiteId && view.startsWith('admin')) {
+    if (selectedSiteId && (view.startsWith('admin') || view === 'admin-panel')) {
       fetchAdminData();
     }
   }, [selectedSiteId, view, adminDate]);
@@ -317,25 +315,40 @@ export default function App() {
   }, [adminDate, selectedSiteId, view]);
 
   useEffect(() => {
-    if (view === 'admin-sites') {
+    if (view === 'admin-panel') {
       fetchSitesSummary();
-    }
-    if (view === 'admin-operators') {
       fetchOperatorsSummary();
     }
   }, [view, selectedSiteId, operatorsMonth, operatorsFilterType, operatorsStartDate, operatorsEndDate]);
 
   useEffect(() => {
-    if (view === 'admin-sites' && editPastSiteId && editPastDate) {
+    if (view === 'admin-panel' && editPastSiteId && editPastDate) {
       fetchSpecificDateEP(editPastSiteId, editPastDate);
     }
   }, [editPastSiteId, editPastDate, view]);
 
   useEffect(() => {
-    if (view === 'admin-sites' && !editPastSiteId && sitesSummary.length > 0) {
+    if (view === 'admin-panel' && !editPastSiteId && sitesSummary.length > 0) {
       setEditPastSiteId(sitesSummary[0].id.toString());
     }
   }, [view, sitesSummary, editPastSiteId]);
+
+  // Select first available admin active tab if current tab is not permitted
+  useEffect(() => {
+    if (view === 'admin-panel') {
+      const permittedTabs: ('downloads' | 'sites' | 'users' | 'operators' | 'settings' | 'records')[] = [];
+      if (hasPermission('admin-reports')) permittedTabs.push('downloads');
+      if (hasPermission('admin-sites')) permittedTabs.push('sites');
+      if (hasPermission('admin-operators')) permittedTabs.push('operators');
+      if (currentUser?.role === 'admin') permittedTabs.push('users');
+      if (hasPermission('admin-management')) permittedTabs.push('settings');
+      if (hasPermission('personal-records')) permittedTabs.push('records');
+
+      if (permittedTabs.length > 0 && !permittedTabs.includes(adminActiveTab)) {
+        setAdminActiveTab(permittedTabs[0]);
+      }
+    }
+  }, [view, adminActiveTab, currentUser]);
 
   const updateOperatorRate = async (id: string | number, rate: number) => {
     try {
@@ -939,10 +952,12 @@ export default function App() {
   // Ordered views for swipe navigation based on user permissions
   const getSwipeViews = () => {
     if (currentUser?.role === 'admin') {
-      return ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'user-controls', 'apps'];
+      return ['main-view', 'personal-records', 'admin-data-entry', 'admin-panel', 'apps'];
     }
-    const permOrder = ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'apps'];
-    return permOrder.filter(p => hasPermission(p) || p === 'apps');
+    const permOrder = ['main-view', 'personal-records', 'admin-data-entry', 'admin-panel', 'apps'];
+    return permOrder.filter(p => p === 'admin-panel' ? (
+      hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators') || hasPermission('admin-management')
+    ) : hasPermission(p) || p === 'apps');
   };
 
   const handleSwipe = (direction: 'left' | 'right') => {
@@ -1043,10 +1058,13 @@ export default function App() {
             )}
             {hasPermission('personal-records') && (
               <button 
-                onClick={() => setView('personal-records')}
+                onClick={() => {
+                  setView('admin-panel');
+                  setAdminActiveTab('records');
+                }}
                 className={cn(
                   "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
-                  view === 'personal-records' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                  (view === 'admin-panel' && adminActiveTab === 'records') ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
                 <TrendingUp className="w-3.5 h-3.5" />
@@ -1065,64 +1083,16 @@ export default function App() {
                 Entry
               </button>
             )}
-            {hasPermission('admin-reports') && (
+            {(hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators') || hasPermission('admin-management') || hasPermission('personal-records') || currentUser?.role === 'admin') && (
               <button 
-                onClick={() => setView('admin-reports')}
+                onClick={() => setView('admin-panel')}
                 className={cn(
                   "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
-                  view === 'admin-reports' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                  (view === 'admin-panel' && adminActiveTab !== 'records') ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 )}
               >
-                <Download className="w-3.5 h-3.5" />
-                Downloads
-              </button>
-            )}
-            {hasPermission('admin-sites') && (
-              <button 
-                onClick={() => setView('admin-sites')}
-                className={cn(
-                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
-                  view === 'admin-sites' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <Layers className="w-3.5 h-3.5" />
-                Sites
-              </button>
-            )}
-            {hasPermission('admin-operators') && (
-              <button 
-                onClick={() => setView('admin-operators')}
-                className={cn(
-                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
-                  view === 'admin-operators' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <Users className="w-3.5 h-3.5" />
-                Operators
-              </button>
-            )}
-            {currentUser?.role === 'admin' && (
-              <button 
-                onClick={() => setView('user-controls')}
-                className={cn(
-                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
-                  view === 'user-controls' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <UserCog className="w-3.5 h-3.5" />
-                Users
-              </button>
-            )}
-            {hasPermission('admin-management') && (
-              <button 
-                onClick={() => setView('admin-management')}
-                className={cn(
-                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
-                  view === 'admin-management' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <Settings className="w-3.5 h-3.5" />
-                Settings
+                <Sliders className="w-3.5 h-3.5" />
+                Admin Panel
               </button>
             )}
             <button 
@@ -1189,10 +1159,14 @@ export default function App() {
                             )}
                             {hasPermission('personal-records') && (
                               <button 
-                                onClick={() => { setView('personal-records'); setIsMenuOpen(false); }}
+                                onClick={() => { 
+                                  setView('admin-panel'); 
+                                  setAdminActiveTab('records');
+                                  setIsMenuOpen(false); 
+                                }}
                                 className={cn(
                                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
-                                  view === 'personal-records' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
+                                  (view === 'admin-panel' && adminActiveTab === 'records') ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
                                 )}
                               >
                                 <TrendingUp className="w-4 h-4" />
@@ -1202,7 +1176,7 @@ export default function App() {
                           </>
                         )}
 
-                        { (hasPermission('admin-data-entry') || hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators') || hasPermission('admin-management')) && (
+                        { (hasPermission('admin-data-entry') || hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators') || hasPermission('admin-management') || hasPermission('personal-records') || currentUser?.role === 'admin') && (
                           <>
                             <div className="h-px bg-slate-100 my-2 mx-2" />
                             <div className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Admin Tools</div>
@@ -1219,52 +1193,16 @@ export default function App() {
                                 Data Entry
                               </button>
                             )}
-                            {hasPermission('admin-reports') && (
+                            {(hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators') || hasPermission('admin-management') || hasPermission('personal-records') || currentUser?.role === 'admin') && (
                               <button 
-                                onClick={() => { setView('admin-reports'); setIsMenuOpen(false); }}
+                                onClick={() => { setView('admin-panel'); setIsMenuOpen(false); }}
                                 className={cn(
                                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
-                                  view === 'admin-reports' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
+                                  (view === 'admin-panel' && adminActiveTab !== 'records') ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
                                 )}
                               >
-                                <Download className="w-4 h-4" />
-                                Downloads
-                              </button>
-                            )}
-                            {hasPermission('admin-sites') && (
-                              <button 
-                                onClick={() => { setView('admin-sites'); setIsMenuOpen(false); }}
-                                className={cn(
-                                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
-                                  view === 'admin-sites' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
-                                )}
-                              >
-                                <Layers className="w-4 h-4" />
-                                Manage Sites
-                              </button>
-                            )}
-                            {hasPermission('admin-operators') && (
-                              <button 
-                                onClick={() => { setView('admin-operators'); setIsMenuOpen(false); }}
-                                className={cn(
-                                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
-                                  view === 'admin-operators' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
-                                )}
-                              >
-                                <Users className="w-4 h-4" />
-                                Operators
-                              </button>
-                            )}
-                            {hasPermission('admin-management') && (
-                              <button 
-                                onClick={() => { setView('admin-management'); setIsMenuOpen(false); }}
-                                className={cn(
-                                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
-                                  view === 'admin-management' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
-                                )}
-                              >
-                                <Settings className="w-4 h-4" />
-                                Settings
+                                <Sliders className="w-4 h-4" />
+                                Admin Panel
                               </button>
                             )}
                             <button 
@@ -1276,24 +1214,6 @@ export default function App() {
                             >
                               <Globe className="w-4 h-4" />
                               Apps Center
-                            </button>
-                          </>
-                        )}
-
-                        {currentUser?.role === 'admin' && (
-                          <>
-                            <div className="h-px bg-slate-100 my-2 mx-2" />
-                            <div className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Account</div>
-
-                            <button 
-                              onClick={() => { setView('user-controls'); setIsMenuOpen(false); }}
-                              className={cn(
-                                "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
-                                view === 'user-controls' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
-                              )}
-                            >
-                              <UserCog className="w-4 h-4" />
-                              User Controls
                             </button>
                           </>
                         )}
@@ -1344,7 +1264,7 @@ export default function App() {
                           </button>
                         )}
                         {hasPermission('personal-records') && (
-                          <button onClick={() => { setView('personal-records'); setIsMenuOpen(false); }} className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all", view === 'personal-records' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50")}>
+                          <button onClick={() => { setView('admin-panel'); setAdminActiveTab('records'); setIsMenuOpen(false); }} className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all", (view === 'admin-panel' && adminActiveTab === 'records') ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50")}>
                             <TrendingUp className="w-4 h-4" /> Personal Records
                           </button>
                         )}
@@ -1615,52 +1535,6 @@ export default function App() {
                 </Card>
               </div>
             </motion.div>
-          ) : view === 'personal-records' && hasPermission('personal-records') ? (
-            <motion.div 
-              key="personal-records"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-8"
-            >
-              <Card className="lg:col-span-3">
-                <div className="flex items-center justify-between mb-8">
-                  <h3 className="text-xl font-bold flex items-center gap-2">
-                    <TrendingUp className="w-6 h-6 text-indigo-600" />
-                    Personal Records
-                  </h3>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total {stats?.overall.unit || 'Files'} Scanned</span>
-                    {(!stats || stats.mode !== 'personal') ? (
-                      <div className="h-9 w-24 bg-slate-200 animate-pulse rounded-lg mt-1" />
-                    ) : (
-                      <span className="text-3xl font-bold text-slate-900">{stats?.overall.total_files?.toLocaleString()}</span>
-                    )}
-                  </div>
-                  <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100">
-                    <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block mb-1">Total Pages Scanned</span>
-                    {(!stats || stats.mode !== 'personal') ? (
-                      <div className="h-9 w-24 bg-indigo-200 animate-pulse rounded-lg mt-1" />
-                    ) : (
-                      <span className="text-3xl font-bold text-indigo-900">{stats?.overall.total_pages?.toLocaleString()}</span>
-                    )}
-                  </div>
-                  <div className="p-6 bg-orange-50 rounded-2xl border border-orange-100">
-                    <span className="text-[10px] font-bold text-orange-600 uppercase tracking-wider block mb-1">EP</span>
-                    {(!stats || stats.mode !== 'personal') ? (
-                      <div className="h-9 w-24 bg-orange-200 animate-pulse rounded-lg mt-1" />
-                    ) : (
-                      <span className="text-3xl font-bold text-orange-900">
-                        {stats.monthly?.reduce((sum, m) => sum + (m.extra_pages || 0), 0).toLocaleString()}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            </motion.div>
           ) : view === 'admin-data-entry' && hasPermission('admin-data-entry') ? (
             <motion.div 
               key="admin-data-entry"
@@ -1891,820 +1765,1021 @@ export default function App() {
               </Card>
             </motion.div>
 
-          ) : view === 'admin-reports' && hasPermission('admin-reports') ? (
+          ) : view === 'admin-panel' && (hasPermission('admin-reports') || hasPermission('admin-sites') || hasPermission('admin-operators') || hasPermission('admin-management') || hasPermission('personal-records') || currentUser?.role === 'admin') ? (
             <motion.div 
-              key="admin-reports"
+              key="admin-panel"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               className="space-y-8"
             >
-              <Card>
-                <div className="flex items-center justify-between mb-8">
-                  <h3 className="text-lg font-bold flex items-center gap-2">
-                    <Download className="w-5 h-5 text-orange-600" />
-                    Downloads
-                  </h3>
+              <div className="flex flex-col md:flex-row md:items-center justify-between pb-2 gap-4 border-b border-slate-100">
+                <div>
+                  <h2 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                    <Sliders className="w-8 h-8 text-indigo-600" />
+                    Admin Control Panel
+                  </h2>
+                  <p className="text-slate-500 font-medium">Manage sites, downloads, operators, users and configuration parameters</p>
                 </div>
-                
-                <div className="max-w-2xl mx-auto space-y-6">
-                    <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
-                      <div className="flex items-center justify-between mb-4 pb-4 border-b border-indigo-100/50">
-                        <h4 className="font-bold text-slate-900 uppercase text-xs tracking-wider">Export Settings</h4>
-                        
-                        <div className="flex bg-slate-200/60 p-0.5 rounded-lg text-xs font-semibold">
-                          <button
-                            type="button"
-                            onClick={() => setExportType('month')}
-                            className={cn(
-                              "px-2.5 py-1 rounded-md transition-all",
-                              exportType === 'month' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
+              </div>
+
+              {/* Seamless Tab Navigation */}
+              <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/60 p-1.5 rounded-2xl border border-slate-200">
+                {hasPermission('personal-records') && (
+                  <button
+                    type="button"
+                    onClick={() => setAdminActiveTab('records')}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all",
+                      adminActiveTab === 'records' 
+                        ? "bg-white text-indigo-600 shadow-sm border border-slate-200/40" 
+                        : "text-slate-500 hover:bg-slate-200/50 hover:text-slate-900"
+                    )}
+                  >
+                    <TrendingUp className="w-4 h-4 text-indigo-600" />
+                    Personal Records
+                  </button>
+                )}
+                {hasPermission('admin-reports') && (
+                  <button
+                    type="button"
+                    onClick={() => setAdminActiveTab('downloads')}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all",
+                      adminActiveTab === 'downloads' 
+                        ? "bg-white text-indigo-600 shadow-sm border border-slate-200/40" 
+                        : "text-slate-500 hover:bg-slate-200/50 hover:text-slate-900"
+                    )}
+                  >
+                    <Download className="w-4 h-4 text-orange-600" />
+                    Downloads
+                  </button>
+                )}
+                {hasPermission('admin-sites') && (
+                  <button
+                    type="button"
+                    onClick={() => setAdminActiveTab('sites')}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all",
+                      adminActiveTab === 'sites' 
+                        ? "bg-white text-indigo-600 shadow-sm border border-slate-200/40" 
+                        : "text-slate-500 hover:bg-slate-200/50 hover:text-slate-900"
+                    )}
+                  >
+                    <Layers className="w-4 h-4 text-indigo-600" />
+                    Sites Management
+                  </button>
+                )}
+                {hasPermission('admin-operators') && (
+                  <button
+                    type="button"
+                    onClick={() => setAdminActiveTab('operators')}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all",
+                      adminActiveTab === 'operators' 
+                        ? "bg-white text-indigo-600 shadow-sm border border-slate-200/40" 
+                        : "text-slate-500 hover:bg-slate-200/50 hover:text-slate-900"
+                    )}
+                  >
+                    <Users className="w-4 h-4 text-emerald-600" />
+                    Operators Summary
+                  </button>
+                )}
+                {currentUser?.role === 'admin' && (
+                  <button
+                    type="button"
+                    onClick={() => setAdminActiveTab('users')}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all",
+                      adminActiveTab === 'users' 
+                        ? "bg-white text-indigo-600 shadow-sm border border-slate-200/40" 
+                        : "text-slate-500 hover:bg-slate-200/50 hover:text-slate-900"
+                    )}
+                  >
+                    <UserCog className="w-4 h-4 text-indigo-600" />
+                    Users Control
+                  </button>
+                )}
+                {hasPermission('admin-management') && (
+                  <button
+                    type="button"
+                    onClick={() => setAdminActiveTab('settings')}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all",
+                      adminActiveTab === 'settings' 
+                        ? "bg-white text-indigo-600 shadow-sm border border-slate-200/40" 
+                        : "text-slate-500 hover:bg-slate-200/50 hover:text-slate-900"
+                    )}
+                  >
+                    <Settings className="w-4 h-4 text-rose-600" />
+                    Site Configurations
+                  </button>
+                )}
+              </div>
+
+              {/* Render Selected Tab content */}
+              <AnimatePresence mode="wait">
+                {adminActiveTab === 'downloads' && hasPermission('admin-reports') && (
+                  <motion.div
+                    key="tab-downloads"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    className="space-y-6"
+                  >
+                    <Card>
+                      <div className="flex items-center justify-between mb-8">
+                        <h3 className="text-lg font-bold flex items-center gap-2">
+                          <Download className="w-5 h-5 text-orange-600" />
+                          Downloads
+                        </h3>
+                      </div>
+                      
+                      <div className="max-w-2xl mx-auto space-y-6">
+                        <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                          <div className="flex items-center justify-between mb-4 pb-4 border-b border-indigo-100/50">
+                            <h4 className="font-bold text-slate-900 uppercase text-xs tracking-wider">Export Settings</h4>
+                            
+                            <div className="flex bg-slate-200/60 p-0.5 rounded-lg text-xs font-semibold">
+                              <button
+                                type="button"
+                                onClick={() => setExportType('month')}
+                                className={cn(
+                                  "px-2.5 py-1 rounded-md transition-all",
+                                  exportType === 'month' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
+                                )}
+                              >
+                                Month-wise
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setExportType('range')}
+                                className={cn(
+                                  "px-2.5 py-1 rounded-md transition-all",
+                                  exportType === 'range' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
+                                )}
+                              >
+                                Custom Range
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            {exportType === 'month' ? (
+                              <>
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-sm font-medium text-slate-600">Select Month:</span>
+                                  <input 
+                                    type="month" 
+                                    value={exportMonth}
+                                    onChange={(e) => setExportMonth(e.target.value)}
+                                    className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-indigo-550/20 text-slate-700 outline-none"
+                                  />
+                                </div>
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-sm font-medium text-slate-600">Extra Pages:</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="bg-orange-50 text-orange-700 px-4 py-2 rounded-xl text-sm font-bold border border-orange-100">
+                                      {stats?.monthly.find(m => m.month === exportMonth)?.extra_pages || 0}
+                                    </span>
+                                  </div>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-sm font-medium text-slate-600">From Date:</span>
+                                  <input 
+                                    type="date" 
+                                    value={exportStartDate}
+                                    onChange={(e) => setExportStartDate(e.target.value)}
+                                    className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-indigo-550/20 text-slate-700 outline-none"
+                                  />
+                                </div>
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-sm font-medium text-slate-600">To Date:</span>
+                                  <input 
+                                    type="date" 
+                                    value={exportEndDate}
+                                    onChange={(e) => setExportEndDate(e.target.value)}
+                                    className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-indigo-550/20 text-slate-700 outline-none"
+                                  />
+                                </div>
+                              </div>
                             )}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <button 
+                            type="button"
+                            onClick={() => downloadReport('personal')}
+                            disabled={isDownloading !== null}
+                            className="flex flex-col items-center justify-center p-6 bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all group disabled:opacity-60 font-inherit"
                           >
-                            Month-wise
+                            {isDownloading === 'personal' ? (
+                              <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mb-2" />
+                            ) : (
+                              <FileText className="w-8 h-8 text-slate-400 mb-2 group-hover:text-indigo-600 transition-colors" />
+                            )}
+                            <span className="text-sm font-bold text-slate-700">{isDownloading === 'personal' ? 'Downloading...' : 'Personal Sheet'}</span>
+                            <span className="text-[10px] text-slate-400 uppercase mt-1">Excel Format</span>
                           </button>
-                          <button
+                          <button 
                             type="button"
-                            onClick={() => setExportType('range')}
-                            className={cn(
-                              "px-2.5 py-1 rounded-md transition-all",
-                              exportType === 'range' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
-                            )}
+                            onClick={() => downloadReport('main')}
+                            disabled={isDownloading !== null}
+                            className="flex flex-col items-center justify-center p-6 bg-indigo-600 rounded-2xl hover:bg-indigo-700 transition-all group shadow-lg shadow-indigo-500/20 disabled:opacity-60 font-inherit"
                           >
-                            Custom Range
+                            {isDownloading === 'main' ? (
+                              <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-2" />
+                            ) : (
+                              <Download className="w-8 h-8 text-white/80 mb-2 group-hover:text-white transition-colors" />
+                            )}
+                            <span className="text-sm font-bold text-white">{isDownloading === 'main' ? 'Downloading...' : 'Main Sheet'}</span>
+                            <span className="text-[10px] text-white/60 uppercase mt-1">Excel Format</span>
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={downloadPDFReport}
+                            className="flex flex-col items-center justify-center p-6 bg-rose-600 rounded-2xl hover:bg-rose-700 text-white transition-all group shadow-lg shadow-rose-550/20 font-inherit"
+                          >
+                            <Layers className="w-8 h-8 text-rose-200 mb-2 group-hover:text-white transition-colors" />
+                            <span className="text-sm font-bold">PDF Summary</span>
+                            <span className="text-[10px] text-rose-200 uppercase mt-1">Multan Scanning</span>
+                          </button>
+                        </div>
+                      </div>
+                    </Card>
+                  </motion.div>
+                )}
+
+                {adminActiveTab === 'sites' && hasPermission('admin-sites') && (
+                  <motion.div
+                    key="tab-sites"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    className="space-y-6"
+                  >
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                      <Card className="border-indigo-100 bg-indigo-50/30">
+                        <h4 className="font-bold mb-4 flex items-center gap-2 text-indigo-900">
+                          <Plus className="w-4 h-4" /> Add New Site
+                        </h4>
+                        <div className="space-y-4">
+                          <input 
+                            type="text" 
+                            placeholder="Site Name (e.g. Islamabad)"
+                            value={newSiteName}
+                            onChange={(e) => setNewSiteName(e.target.value)}
+                            className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                          />
+                          <input 
+                            type="number" 
+                            placeholder={`Target ${stats?.overall.unit || 'Files'}`}
+                            value={newSiteTarget}
+                            onChange={(e) => setNewSiteTarget(e.target.value)}
+                            className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-indigo-400 uppercase ml-1">Rate (Rs)</label>
+                              <input 
+                                type="number" 
+                                step="0.001"
+                                placeholder="Rate"
+                                value={newSiteRate}
+                                onChange={(e) => setNewSiteRate(e.target.value)}
+                                className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-indigo-400 uppercase ml-1">Unit Label</label>
+                              <input 
+                                type="text" 
+                                placeholder="Files/Registers"
+                                value={newSiteUnit}
+                                onChange={(e) => setNewSiteUnit(e.target.value)}
+                                className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-indigo-400 uppercase ml-1">Default Extra Pages (Daily)</label>
+                            <input 
+                              type="number" 
+                              placeholder="Default Extra Pages"
+                              value={newSiteDefaultExtraPages}
+                              onChange={(e) => setNewSiteDefaultExtraPages(e.target.value)}
+                              className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-505/20 font-bold"
+                            />
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={handleAddSite}
+                            className="w-full bg-indigo-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all font-inherit"
+                          >
+                            Create Site
+                          </button>
+                        </div>
+                      </Card>
+
+                      <Card className="lg:col-span-2 border-slate-200 bg-white">
+                        <h4 className="font-bold mb-4 flex items-center gap-2 text-slate-900">
+                          <LayoutDashboard className="w-4 h-4 text-indigo-600" /> Site Overview
+                        </h4>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-slate-400 font-medium border-b border-black/5">
+                                <th className="text-left pb-3">Site Name</th>
+                                <th className="text-right pb-3">Rate</th>
+                                <th className="text-right pb-3">Unit</th>
+                                <th className="text-right pb-3 text-indigo-500">Default EP</th>
+                                <th className="text-right pb-3 text-orange-600">Total EP</th>
+                                <th className="text-right pb-3">Total Scanned</th>
+                                <th className="text-right pb-3">Total Pages</th>
+                                <th className="text-right pb-3">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-black/5">
+                              {sitesSummary.map((site) => (
+                                <tr key={site.id} className="group hover:bg-slate-50 transition-colors">
+                                  <td className="py-4 font-medium text-slate-700">{site.name}</td>
+                                  <td className="py-2 text-right font-mono text-slate-600">
+                                    {isUpdatingSiteRate === site.id ? (
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        <input 
+                                          type="number" 
+                                          step="0.001"
+                                          value={newSiteRateValue}
+                                          onChange={(e) => setNewSiteRateValue(e.target.value)}
+                                          className="w-16 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                                          autoFocus
+                                        />
+                                        <button 
+                                          type="button"
+                                          onClick={() => updateSiteRate(site.id, parseFloat(newSiteRateValue) || 0)}
+                                          className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition font-inherit"
+                                          title="Save"
+                                        >
+                                          <Check className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button 
+                                          type="button"
+                                          onClick={() => setIsUpdatingSiteRate(null)}
+                                          className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition font-inherit"
+                                          title="Cancel"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
+                                        <span>
+                                          {site.rate !== undefined && site.rate !== null 
+                                            ? site.rate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) 
+                                            : '0.30'}
+                                        </span>
+                                        <button 
+                                          type="button"
+                                          onClick={() => {
+                                            setIsUpdatingSiteRate(site.id);
+                                            setNewSiteRateValue(site.rate?.toString() || '0.30');
+                                          }}
+                                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                          title="Edit Rate"
+                                        >
+                                          <Edit className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="py-2 text-right text-slate-500 text-xs">
+                                    {isUpdatingSiteUnit === site.id ? (
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        <input 
+                                          type="text" 
+                                          value={newSiteUnitValue}
+                                          onChange={(e) => setNewSiteUnitValue(e.target.value)}
+                                          placeholder="Unit"
+                                          className="w-20 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-550 font-bold"
+                                          autoFocus
+                                        />
+                                        <button 
+                                          type="button"
+                                          onClick={() => updateSiteUnit(site.id, newSiteUnitValue || 'Files')}
+                                          className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition font-inherit"
+                                          title="Save"
+                                        >
+                                          <Check className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button 
+                                          type="button"
+                                          onClick={() => setIsUpdatingSiteUnit(null)}
+                                          className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition font-inherit"
+                                          title="Cancel"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
+                                        <span>{site.unit || 'Files'}</span>
+                                        <button 
+                                          type="button"
+                                          onClick={() => {
+                                            setIsUpdatingSiteUnit(site.id);
+                                            setNewSiteUnitValue(site.unit || 'Files');
+                                          }}
+                                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                          title="Edit Unit"
+                                        >
+                                          <Edit className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </td>
+                                  {/* Default EP inline configuration */}
+                                  <td className="py-2 text-right text-slate-500 text-xs">
+                                    {isUpdatingSiteDefaultEP === site.id ? (
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        <input 
+                                          type="number" 
+                                          value={newSiteDefaultEPValue}
+                                          onChange={(e) => setNewSiteDefaultEPValue(e.target.value)}
+                                          placeholder="0"
+                                          className="w-16 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                                          autoFocus
+                                        />
+                                        <button 
+                                          type="button"
+                                          onClick={() => updateSiteDefaultEP(site.id, parseInt(newSiteDefaultEPValue) || 0)}
+                                          className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition font-inherit"
+                                          title="Save"
+                                        >
+                                          <Check className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button 
+                                          type="button"
+                                          onClick={() => setIsUpdatingSiteDefaultEP(null)}
+                                          className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition font-inherit"
+                                          title="Cancel"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
+                                        <span className="font-bold text-indigo-600 font-mono">{site.default_extra_pages ?? 0}</span>
+                                        <button 
+                                          type="button"
+                                          onClick={() => {
+                                            setIsUpdatingSiteDefaultEP(site.id);
+                                            setNewSiteDefaultEPValue((site.default_extra_pages ?? 0).toString());
+                                          }}
+                                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                          title="Edit Default Extra Pages"
+                                        >
+                                          <Edit className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="py-4 text-right font-mono text-orange-600">{site.extra_pages?.toLocaleString() || '0'}</td>
+                                  <td className="py-4 text-right font-mono text-slate-600">{site.total_files?.toLocaleString() || '0'}</td>
+                                  <td className="py-4 text-right font-mono text-slate-600">{site.total_pages?.toLocaleString() || '0'}</td>
+                                  <td className="py-4 text-right">
+                                    {confirmDeleteSite === site.id ? (
+                                      <div className="flex justify-end gap-1">
+                                        <button 
+                                          type="button"
+                                          onClick={() => handleDeleteSite(site.id)}
+                                          className="px-2 py-1 bg-red-600 text-white text-[10px] font-bold rounded hover:bg-red-700 font-inherit"
+                                        >
+                                          Confirm
+                                        </button>
+                                        <button 
+                                          type="button"
+                                          onClick={() => setConfirmDeleteSite(null)}
+                                          className="px-2 py-1 bg-slate-200 text-slate-600 text-[10px] font-bold rounded hover:bg-slate-300 font-inherit"
+                                        >
+                                          No
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button 
+                                        type="button"
+                                        onClick={() => setConfirmDeleteSite(site.id)}
+                                        className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
+                                        title="Delete Site"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot className="border-t-2 border-slate-100">
+                              <tr className="bg-slate-50/50 font-bold">
+                                <td className="py-4 text-slate-900 pl-4">GRAND TOTAL</td>
+                                <td className="py-4"></td>
+                                <td className="py-4"></td>
+                                <td className="py-4 text-right font-mono text-indigo-650">
+                                  {sitesSummary.reduce((sum, s) => sum + (s.default_extra_pages || 0), 0).toLocaleString()}
+                                </td>
+                                <td className="py-4 text-right font-mono text-orange-700">
+                                  {sitesSummary.reduce((sum, s) => sum + (s.extra_pages || 0), 0).toLocaleString()}
+                                </td>
+                                <td className="py-4 text-right font-mono text-slate-900">
+                                  {sitesSummary.reduce((sum, s) => sum + (s.total_files || 0), 0).toLocaleString()}
+                                </td>
+                                <td className="py-4 text-right font-mono text-slate-900">
+                                  {sitesSummary.reduce((sum, s) => sum + (s.total_pages || 0), 0).toLocaleString()}
+                                </td>
+                                <td className="py-4"></td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      </Card>
+                    </div>
+
+                    {/* Edit Specific Previous Dates Extra Pages */}
+                    <Card className="border-indigo-150 bg-slate-50/50 mt-8">
+                      <div>
+                        <h4 className="font-bold flex items-center gap-2 text-indigo-900 text-sm md:text-base">
+                          <Layers className="w-5 h-5 text-indigo-600" />
+                          Edit Specific Previous Dates Extra Pages
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-1">Select any site and past date to view and update its custom daily extra pages.</p>
+                      </div>
+
+                      <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Select Site</label>
+                          <select 
+                            value={editPastSiteId}
+                            onChange={(e) => setEditPastSiteId(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                          >
+                            <option value="">-- Choose a Site --</option>
+                            {sitesSummary.map(s => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Select Date</label>
+                          <input 
+                            type="date" 
+                            value={editPastDate}
+                            onChange={(e) => setEditPastDate(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-550/20 font-medium"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">
+                            Extra Pages 
+                            {isFetchingPastEP && <span className="text-indigo-600 text-[9px] uppercase ml-2 animate-pulse">(Loading...)</span>}
+                          </label>
+                          <input 
+                            type="number" 
+                            placeholder="EP Value"
+                            value={editPastEPValue}
+                            onChange={(e) => setEditPastEPValue(e.target.value)}
+                            disabled={isFetchingPastEP}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 font-bold"
+                          />
+                        </div>
+
+                        <div>
+                          <button 
+                            type="button"
+                            onClick={handleSavePastEP}
+                            disabled={isSavingPastEP || isFetchingPastEP || !editPastSiteId}
+                            className="w-full bg-indigo-600 text-white py-2 px-4 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 h-[38px] flex items-center justify-center gap-2 shadow md:shadow-indigo-550/10 font-inherit"
+                          >
+                            {isSavingPastEP ? 'Saving...' : 'Update Extra Pages'}
                           </button>
                         </div>
                       </div>
 
-                      <div className="space-y-4">
-                        {exportType === 'month' ? (
-                          <>
-                            <div className="flex items-center justify-between gap-4">
-                              <span className="text-sm font-medium text-slate-600">Select Month:</span>
-                              <input 
-                                type="month" 
-                                value={exportMonth}
-                                onChange={(e) => setExportMonth(e.target.value)}
-                                className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-indigo-500/20 text-slate-700 outline-none"
-                              />
-                            </div>
-                            <div className="flex items-center justify-between gap-4">
-                              <span className="text-sm font-medium text-slate-600">Extra Pages:</span>
-                              <div className="flex items-center gap-2">
-                                <span className="bg-orange-50 text-orange-700 px-4 py-2 rounded-xl text-sm font-bold border border-orange-100">
-                                  {stats?.monthly.find(m => m.month === exportMonth)?.extra_pages || 0}
-                                </span>
+                      {pastEPMessage && (
+                        <div className={`mt-4 px-4 py-2.5 rounded-xl text-xs font-medium ${
+                          pastEPMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                        }`}>
+                          {pastEPMessage.text}
+                        </div>
+                      )}
+                    </Card>
+                  </motion.div>
+                )}
+
+                {adminActiveTab === 'operators' && hasPermission('admin-operators') && (
+                  <motion.div
+                    key="tab-operators"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    className="space-y-6"
+                  >
+                    <Card className="border-slate-200 bg-white">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-slate-100 pb-4">
+                        <h3 className="text-lg font-bold flex items-center gap-2 text-slate-900">
+                          <Users className="w-5 h-5 text-indigo-600" /> Operator Performance & Earnings
+                        </h3>
+                        <div className="flex flex-wrap items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-200 shadow-2xs">
+                          {/* Toggle */}
+                          <div className="flex bg-slate-205/80 p-0.5 rounded-xl text-xs font-bold leading-none shrink-0 self-start sm:self-auto">
+                            <button
+                              type="button"
+                              onClick={() => setOperatorsFilterType('month')}
+                              className={cn(
+                                "px-3 py-1.5 rounded-lg transition-all",
+                                operatorsFilterType === 'month' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
+                              )}
+                            >
+                              Month-wise
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setOperatorsFilterType('range')}
+                              className={cn(
+                                "px-3 py-1.5 rounded-lg transition-all",
+                                operatorsFilterType === 'range' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
+                              )}
+                            >
+                              Custom Range
+                            </button>
+                          </div>
+
+                          {/* Inputs */}
+                          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                            {operatorsFilterType === 'month' ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest pl-1">Month:</span>
+                                <input 
+                                  type="month" 
+                                  value={operatorsMonth}
+                                  onChange={(e) => setOperatorsMonth(e.target.value)}
+                                  className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                />
                               </div>
+                            ) : (
+                              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest pl-1">From:</span>
+                                  <input 
+                                    type="date" 
+                                    value={operatorsStartDate}
+                                    onChange={(e) => setOperatorsStartDate(e.target.value)}
+                                    className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest pl-1">To:</span>
+                                  <input 
+                                    type="date" 
+                                    value={operatorsEndDate}
+                                    onChange={(e) => setOperatorsEndDate(e.target.value)}
+                                    className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-slate-400 font-medium border-b border-black/5">
+                              <th className="text-left pb-3">Operator Name</th>
+                              <th className="text-left pb-3">Site</th>
+                              <th className="text-right pb-3">Total {stats?.overall.unit || 'Files'}</th>
+                              <th className="text-right pb-3">Total Pages</th>
+                              <th className="text-right pb-3 text-emerald-600">Earnings (Rs)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-black/5">
+                            {operatorsSummary.map((op) => {
+                              const earnings = (op.total_pages || 0) * (op.rate || 0.3);
+                              return (
+                                <tr key={op.id} className="group hover:bg-slate-50 transition-colors">
+                                  <td className="py-4 font-medium text-slate-700">{op.name}</td>
+                                  <td className="py-4 text-slate-500 text-xs">{op.site_name}</td>
+                                  <td className="py-4 text-right font-mono text-slate-600">{op.total_files?.toLocaleString() || '0'}</td>
+                                  <td className="py-4 text-right font-mono text-slate-600">{op.total_pages?.toLocaleString() || '0'}</td>
+                                  <td className="py-4 text-right font-mono font-bold text-emerald-600">
+                                    {earnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot className="border-t-2 border-slate-100">
+                            <tr className="bg-slate-50/50 font-bold">
+                              <td colSpan={2} className="py-4 text-slate-900 pl-4">GRAND TOTAL</td>
+                              <td className="py-4 text-right font-mono text-slate-900">
+                                {operatorsSummary.reduce((sum, op) => sum + (op.total_files || 0), 0).toLocaleString()}
+                              </td>
+                              <td className="py-4 text-right font-mono text-slate-900">
+                                {operatorsSummary.reduce((sum, op) => sum + (op.total_pages || 0), 0).toLocaleString()}
+                              </td>
+                              <td className="py-4 text-right font-mono text-emerald-700">
+                                {operatorsSummary.reduce((sum, op) => sum + ((op.total_pages || 0) * (op.rate || 0.3)), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </Card>
+                  </motion.div>
+                )}
+
+                {adminActiveTab === 'users' && currentUser?.role === 'admin' && (
+                  <motion.div
+                    key="tab-users"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                  >
+                    <UserControlsPage apiFetch={apiFetch} currentUser={currentUser} />
+                  </motion.div>
+                )}
+
+                {adminActiveTab === 'settings' && hasPermission('admin-management') && (
+                  <motion.div
+                    key="tab-settings"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    className="space-y-6"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                      <Card className="border-emerald-100 bg-emerald-50/30">
+                        <h4 className="font-bold mb-4 flex items-center gap-2 text-emerald-900">
+                          <Users className="w-4 h-4" /> Add Operator to {sites.find(s => s.id === selectedSiteId)?.name}
+                        </h4>
+                        <div className="space-y-4">
+                          <input 
+                            type="text" 
+                            placeholder="Operator Name"
+                            value={newEmployeeName}
+                            onChange={(e) => setNewEmployeeName(e.target.value)}
+                            className="w-full bg-white border border-emerald-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20"
+                          />
+                          <button 
+                            type="button"
+                            onClick={handleAddEmployee}
+                            className="w-full bg-emerald-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all font-inherit"
+                          >
+                            Add Operator
+                          </button>
+                          {addEmployeeMessage && (
+                            <div className={cn(
+                              "px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2",
+                              addEmployeeMessage.type === 'success' ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"
+                            )}>
+                              {addEmployeeMessage.type === 'success' ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                              {addEmployeeMessage.text}
                             </div>
-                          </>
-                        ) : (
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between gap-4">
-                              <span className="text-sm font-medium text-slate-600">From Date:</span>
+                          )}
+                        </div>
+                      </Card>
+
+                      <Card className="border-blue-100 bg-blue-50/30">
+                        <h4 className="font-bold mb-4 flex items-center gap-2 text-blue-900">
+                          <TrendingUp className="w-4 h-4" /> Site Settings
+                        </h4>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-blue-600 uppercase">Target {stats?.overall.unit || 'Files'}</label>
+                            <div className="space-y-2">
                               <input 
-                                type="date" 
-                                value={exportStartDate}
-                                onChange={(e) => setExportStartDate(e.target.value)}
-                                className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-indigo-500/20 text-slate-700 outline-none"
+                                type="number" 
+                                placeholder={stats?.overall.target_files?.toString() || '0'}
+                                value={updateTargetValue}
+                                onChange={(e) => setUpdateTargetValue(e.target.value)}
+                                className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20"
                               />
-                            </div>
-                            <div className="flex items-center justify-between gap-4">
-                              <span className="text-sm font-medium text-slate-600">To Date:</span>
-                              <input 
-                                type="date" 
-                                value={exportEndDate}
-                                onChange={(e) => setExportEndDate(e.target.value)}
-                                className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-indigo-500/20 text-slate-700 outline-none"
-                              />
+                              <button 
+                                type="button"
+                                onClick={handleUpdateTarget}
+                                className="w-full bg-blue-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-blue-700 transition-all font-inherit"
+                              >
+                                Update Target
+                              </button>
                             </div>
                           </div>
-                        )}
-                      </div>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <button 
-                        onClick={() => downloadReport('personal')}
-                        disabled={isDownloading !== null}
-                        className="flex flex-col items-center justify-center p-6 bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all group disabled:opacity-60"
-                      >
-                        {isDownloading === 'personal' ? (
-                          <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mb-2" />
-                        ) : (
-                          <FileText className="w-8 h-8 text-slate-400 mb-2 group-hover:text-indigo-600 transition-colors" />
-                        )}
-                        <span className="text-sm font-bold text-slate-700">{isDownloading === 'personal' ? 'Downloading...' : 'Personal Sheet'}</span>
-                        <span className="text-[10px] text-slate-400 uppercase mt-1">Excel Format</span>
-                      </button>
-                      <button 
-                        onClick={() => downloadReport('main')}
-                        disabled={isDownloading !== null}
-                        className="flex flex-col items-center justify-center p-6 bg-indigo-600 rounded-2xl hover:bg-indigo-700 transition-all group shadow-lg shadow-indigo-500/20 disabled:opacity-60"
-                      >
-                        {isDownloading === 'main' ? (
-                          <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-2" />
-                        ) : (
-                          <Download className="w-8 h-8 text-white/80 mb-2 group-hover:text-white transition-colors" />
-                        )}
-                        <span className="text-sm font-bold text-white">{isDownloading === 'main' ? 'Downloading...' : 'Main Sheet'}</span>
-                        <span className="text-[10px] text-white/60 uppercase mt-1">Excel Format</span>
-                      </button>
-                      <button 
-                        onClick={downloadPDFReport}
-                        className="flex flex-col items-center justify-center p-6 bg-rose-600 rounded-2xl hover:bg-rose-700 text-white transition-all group shadow-lg shadow-rose-550/20"
-                      >
-                        <Layers className="w-8 h-8 text-rose-200 mb-2 group-hover:text-white transition-colors" />
-                        <span className="text-sm font-bold">PDF Summary</span>
-                        <span className="text-[10px] text-rose-200 uppercase mt-1">Multan Scanning</span>
-                      </button>
-                    </div>
-                  </div>
-                </Card>
-              </motion.div>
-          ) : view === 'admin-sites' && hasPermission('admin-sites') ? (
-            <motion.div 
-              key="admin-sites"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-8"
-            >
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <Card className="border-indigo-100 bg-indigo-50/30">
-                  <h4 className="font-bold mb-4 flex items-center gap-2 text-indigo-900">
-                    <Plus className="w-4 h-4" /> Add New Site
-                  </h4>
-                  <div className="space-y-4">
-                    <input 
-                      type="text" 
-                      placeholder="Site Name (e.g. Islamabad)"
-                      value={newSiteName}
-                      onChange={(e) => setNewSiteName(e.target.value)}
-                      className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                    <input 
-                      type="number" 
-                      placeholder={`Target ${stats?.overall.unit || 'Files'}`}
-                      value={newSiteTarget}
-                      onChange={(e) => setNewSiteTarget(e.target.value)}
-                      className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-indigo-400 uppercase ml-1">Rate (Rs)</label>
-                        <input 
-                          type="number" 
-                          step="0.001"
-                          placeholder="Rate"
-                          value={newSiteRate}
-                          onChange={(e) => setNewSiteRate(e.target.value)}
-                          className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-indigo-400 uppercase ml-1">Unit Label</label>
-                        <input 
-                          type="text" 
-                          placeholder="Files/Registers"
-                          value={newSiteUnit}
-                          onChange={(e) => setNewSiteUnit(e.target.value)}
-                          className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-indigo-400 uppercase ml-1">Default Extra Pages (Daily)</label>
-                      <input 
-                        type="number" 
-                        placeholder="Default Extra Pages"
-                        value={newSiteDefaultExtraPages}
-                        onChange={(e) => setNewSiteDefaultExtraPages(e.target.value)}
-                        className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 font-bold"
-                      />
-                    </div>
-                    <button 
-                      onClick={handleAddSite}
-                      className="w-full bg-indigo-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all"
-                    >
-                      Create Site
-                    </button>
-                  </div>
-                </Card>
+                          <div className="space-y-2 pt-2 border-t border-blue-100/50">
+                            <label className="text-[10px] font-bold text-blue-600 uppercase">Total Mouza Scanned</label>
+                            <div className="space-y-2">
+                              <input 
+                                type="number" 
+                                placeholder={(stats?.overall.total_mouza_scanned !== undefined ? stats.overall.total_mouza_scanned : 0).toString()}
+                                value={updateMouzaValue}
+                                onChange={(e) => setUpdateMouzaValue(e.target.value)}
+                                className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20"
+                              />
+                              <button 
+                                type="button"
+                                onClick={handleUpdateMouza}
+                                className="w-full bg-indigo-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all font-inherit"
+                              >
+                                Update Mouza
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
 
-                <Card className="lg:col-span-2 border-slate-200 bg-white">
-                  <h4 className="font-bold mb-4 flex items-center gap-2 text-slate-900">
-                    <LayoutDashboard className="w-4 h-4 text-indigo-600" /> Site Overview
-                  </h4>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-slate-400 font-medium border-b border-black/5">
-                          <th className="text-left pb-3">Site Name</th>
-                          <th className="text-right pb-3">Rate</th>
-                          <th className="text-right pb-3">Unit</th>
-                          <th className="text-right pb-3 text-indigo-500">Default EP</th>
-                          <th className="text-right pb-3 text-orange-600">Total EP</th>
-                          <th className="text-right pb-3">Total Scanned</th>
-                          <th className="text-right pb-3">Total Pages</th>
-                          <th className="text-right pb-3">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-black/5">
-                        {sitesSummary.map((site) => (
-                          <tr key={site.id} className="group hover:bg-slate-50 transition-colors">
-                            <td className="py-4 font-medium text-slate-700">{site.name}</td>
-                            <td className="py-2 text-right font-mono text-slate-600">
-                              {isUpdatingSiteRate === site.id ? (
-                                <div className="flex items-center justify-end gap-1.5">
+                      <Card className="border-indigo-100 bg-indigo-50/30">
+                        <h4 className="font-bold mb-4 flex items-center gap-2 text-indigo-950">
+                          <CalendarIcon className="w-4 h-4 text-indigo-600" /> Project Forecast
+                        </h4>
+                        {forecast && typeof forecast === 'object' ? (
+                          <div className="space-y-4">
+                            <div className="flex flex-col">
+                              <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Estimated Completion</span>
+                              <span className="text-xl font-bold text-indigo-900">{forecast.date}</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="p-3 bg-white rounded-xl border border-indigo-100">
+                                <span className="block text-[10px] font-bold text-slate-400 uppercase">Days Left</span>
+                                <span className="text-lg font-bold text-indigo-600">{forecast.days}</span>
+                              </div>
+                              <div className="p-3 bg-white rounded-xl border border-indigo-100">
+                                <span className="block text-[10px] font-bold text-slate-400 uppercase">Avg. Rate</span>
+                                <span className="text-lg font-bold text-indigo-600">{forecast.rate} <span className="text-xs font-normal">f/d</span></span>
+                              </div>
+                            </div>
+                            <p className="text-[10px] text-slate-500 italic">
+                              * Based on scanning rate of the last 7 active days.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="py-8 text-center text-slate-400 text-sm italic">
+                            {forecast || "Insufficient data for forecast"}
+                          </div>
+                        )}
+                      </Card>
+
+                      <Card className="lg:col-span-3 border-slate-200 bg-white">
+                        <h4 className="font-bold mb-4 flex items-center gap-2 text-slate-900">
+                          <Users className="w-4 h-4 text-indigo-600" /> Manage Operators
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                          {adminData.filter(op => op.is_active).map(operator => (
+                            <div key={operator.employee_id} className="flex flex-col p-3 border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors gap-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium text-slate-700">{operator.name}</span>
+                                <div className="flex items-center gap-1">
+                                  {confirmDeleteEmployeeId === operator.employee_id ? (
+                                    <div className="flex gap-1">
+                                      <button 
+                                        type="button"
+                                        onClick={() => handleDeleteEmployee(operator.employee_id)}
+                                        className="p-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all font-inherit"
+                                        title="Confirm Deactivate"
+                                      >
+                                        <Save className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button 
+                                        type="button"
+                                        onClick={() => setConfirmDeleteEmployeeId(null)}
+                                        className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 transition-all font-inherit"
+                                        title="Cancel"
+                                      >
+                                        <ChevronLeft className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          setIsUpdatingRate(operator.employee_id);
+                                          setNewRateValue((operator as any).rate_per_page?.toString() || '0.30');
+                                        }}
+                                        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                        title="Set Rate"
+                                      >
+                                        <TrendingUp className="w-4 h-4" />
+                                      </button>
+                                      <button 
+                                        type="button"
+                                        onClick={() => setConfirmDeleteEmployeeId(operator.employee_id)}
+                                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                        title="Remove Operator"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              {isUpdatingRate === operator.employee_id && (
+                                <div className="flex items-center gap-2 mt-2">
                                   <input 
                                     type="number" 
                                     step="0.001"
-                                    value={newSiteRateValue}
-                                    onChange={(e) => setNewSiteRateValue(e.target.value)}
-                                    className="w-16 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                                    value={newRateValue}
+                                    onChange={(e) => setNewRateValue(e.target.value)}
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                                    placeholder="Rate per page"
                                     autoFocus
                                   />
                                   <button 
-                                    onClick={() => updateSiteRate(site.id, parseFloat(newSiteRateValue) || 0)}
-                                    className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
-                                    title="Save"
+                                    type="button"
+                                    onClick={() => updateOperatorRate(operator.employee_id, parseFloat(newRateValue) || 0)}
+                                    className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-inherit"
                                   >
-                                    <Check className="w-3.5 h-3.5" />
+                                    <Check className="w-3 h-3" />
                                   </button>
-                                  <button 
-                                    onClick={() => setIsUpdatingSiteRate(null)}
-                                    className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition"
-                                    title="Cancel"
-                                  >
-                                    <X className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
-                                  <span>
-                                    {site.rate !== undefined && site.rate !== null 
-                                      ? site.rate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) 
-                                      : '0.30'}
-                                  </span>
                                   <button 
                                     type="button"
-                                    onClick={() => {
-                                      setIsUpdatingSiteRate(site.id);
-                                      setNewSiteRateValue(site.rate?.toString() || '0.30');
-                                    }}
-                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                                    title="Edit Rate"
+                                    onClick={() => setIsUpdatingRate(null)}
+                                    className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 font-inherit"
                                   >
-                                    <Edit className="w-3.5 h-3.5" />
+                                    <X className="w-3 h-3" />
                                   </button>
                                 </div>
                               )}
-                            </td>
-                            <td className="py-2 text-right text-slate-500 text-xs">
-                              {isUpdatingSiteUnit === site.id ? (
-                                <div className="flex items-center justify-end gap-1.5">
-                                  <input 
-                                    type="text" 
-                                    value={newSiteUnitValue}
-                                    onChange={(e) => setNewSiteUnitValue(e.target.value)}
-                                    placeholder="Unit"
-                                    className="w-20 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
-                                    autoFocus
-                                  />
-                                  <button 
-                                    onClick={() => updateSiteUnit(site.id, newSiteUnitValue || 'Files')}
-                                    className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
-                                    title="Save"
-                                  >
-                                    <Check className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button 
-                                    onClick={() => setIsUpdatingSiteUnit(null)}
-                                    className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition"
-                                    title="Cancel"
-                                  >
-                                    <X className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
-                                  <span>{site.unit || 'Files'}</span>
-                                  <button 
-                                    type="button"
-                                    onClick={() => {
-                                      setIsUpdatingSiteUnit(site.id);
-                                      setNewSiteUnitValue(site.unit || 'Files');
-                                    }}
-                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                                    title="Edit Unit"
-                                  >
-                                    <Edit className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              )}
-                            </td>
-                            {/* Default EP inline configuration */}
-                            <td className="py-2 text-right text-slate-500 text-xs">
-                              {isUpdatingSiteDefaultEP === site.id ? (
-                                <div className="flex items-center justify-end gap-1.5">
-                                  <input 
-                                    type="number" 
-                                    value={newSiteDefaultEPValue}
-                                    onChange={(e) => setNewSiteDefaultEPValue(e.target.value)}
-                                    placeholder="0"
-                                    className="w-16 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
-                                    autoFocus
-                                  />
-                                  <button 
-                                    onClick={() => updateSiteDefaultEP(site.id, parseInt(newSiteDefaultEPValue) || 0)}
-                                    className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
-                                    title="Save"
-                                  >
-                                    <Check className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button 
-                                    onClick={() => setIsUpdatingSiteDefaultEP(null)}
-                                    className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition"
-                                    title="Cancel"
-                                  >
-                                    <X className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
-                                  <span className="font-bold text-indigo-600 font-mono">{site.default_extra_pages ?? 0}</span>
-                                  <button 
-                                    type="button"
-                                    onClick={() => {
-                                      setIsUpdatingSiteDefaultEP(site.id);
-                                      setNewSiteDefaultEPValue((site.default_extra_pages ?? 0).toString());
-                                    }}
-                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                                    title="Edit Default Extra Pages"
-                                  >
-                                    <Edit className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              )}
-                            </td>
-                            <td className="py-4 text-right font-mono text-orange-600">{site.extra_pages?.toLocaleString() || '0'}</td>
-                            <td className="py-4 text-right font-mono text-slate-600">{site.total_files?.toLocaleString() || '0'}</td>
-                            <td className="py-4 text-right font-mono text-slate-600">{site.total_pages?.toLocaleString() || '0'}</td>
-                            <td className="py-4 text-right">
-                              {confirmDeleteSite === site.id ? (
-                                <div className="flex justify-end gap-1">
-                                  <button 
-                                    onClick={() => handleDeleteSite(site.id)}
-                                    className="px-2 py-1 bg-red-600 text-white text-[10px] font-bold rounded hover:bg-red-700"
-                                  >
-                                    Confirm
-                                  </button>
-                                  <button 
-                                    onClick={() => setConfirmDeleteSite(null)}
-                                    className="px-2 py-1 bg-slate-200 text-slate-600 text-[10px] font-bold rounded hover:bg-slate-300"
-                                  >
-                                    No
-                                  </button>
-                                </div>
-                              ) : (
-                                <button 
-                                  onClick={() => setConfirmDeleteSite(site.id)}
-                                  className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
-                                  title="Delete Site"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="border-t-2 border-slate-100">
-                        <tr className="bg-slate-50/50 font-bold">
-                          <td className="py-4 text-slate-900 pl-4">GRAND TOTAL</td>
-                          <td className="py-4"></td>
-                          <td className="py-4"></td>
-                          <td className="py-4 text-right font-mono text-indigo-650">
-                            {sitesSummary.reduce((sum, s) => sum + (s.default_extra_pages || 0), 0).toLocaleString()}
-                          </td>
-                          <td className="py-4 text-right font-mono text-orange-700">
-                            {sitesSummary.reduce((sum, s) => sum + (s.extra_pages || 0), 0).toLocaleString()}
-                          </td>
-                          <td className="py-4 text-right font-mono text-slate-900">
-                            {sitesSummary.reduce((sum, s) => sum + (s.total_files || 0), 0).toLocaleString()}
-                          </td>
-                          <td className="py-4 text-right font-mono text-slate-900">
-                            {sitesSummary.reduce((sum, s) => sum + (s.total_pages || 0), 0).toLocaleString()}
-                          </td>
-                          <td className="py-4"></td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </Card>
-              </div>
-
-              {/* Edit Specific Previous Dates Extra Pages */}
-              <Card className="border-indigo-150 bg-slate-50/50 mt-8">
-                <div>
-                  <h4 className="font-bold flex items-center gap-2 text-indigo-900 text-sm md:text-base">
-                    <Layers className="w-5 h-5 text-indigo-600" />
-                    Edit Specific Previous Dates Extra Pages
-                  </h4>
-                  <p className="text-xs text-slate-400 mt-1">Select any site and past date to view and update its custom daily extra pages.</p>
-                </div>
-
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Select Site</label>
-                    <select 
-                      value={editPastSiteId}
-                      onChange={(e) => setEditPastSiteId(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
-                    >
-                      <option value="">-- Choose a Site --</option>
-                      {sitesSummary.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Select Date</label>
-                    <input 
-                      type="date" 
-                      value={editPastDate}
-                      onChange={(e) => setEditPastDate(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 font-medium"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">
-                      Extra Pages 
-                      {isFetchingPastEP && <span className="text-indigo-600 text-[9px] uppercase ml-2 animate-pulse">(Loading...)</span>}
-                    </label>
-                    <input 
-                      type="number" 
-                      placeholder="EP Value"
-                      value={editPastEPValue}
-                      onChange={(e) => setEditPastEPValue(e.target.value)}
-                      disabled={isFetchingPastEP}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 font-bold"
-                    />
-                  </div>
-
-                  <div>
-                    <button 
-                      onClick={handleSavePastEP}
-                      disabled={isSavingPastEP || isFetchingPastEP || !editPastSiteId}
-                      className="w-full bg-indigo-600 text-white py-2 px-4 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 h-[38px] flex items-center justify-center gap-2 shadow md:shadow-indigo-550/10"
-                    >
-                      {isSavingPastEP ? 'Saving...' : 'Update Extra Pages'}
-                    </button>
-                  </div>
-                </div>
-
-                {pastEPMessage && (
-                  <div className={`mt-4 px-4 py-2.5 rounded-xl text-xs font-medium ${
-                    pastEPMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
-                  }`}>
-                    {pastEPMessage.text}
-                  </div>
-                )}
-              </Card>
-            </motion.div>
-          ) : view === 'admin-operators' && hasPermission('admin-operators') ? (
-            <motion.div 
-              key="admin-operators"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-8"
-            >
-              <Card className="border-slate-200 bg-white">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-slate-100 pb-4">
-                  <h4 className="font-bold flex items-center gap-2 text-slate-900">
-                    <Users className="w-5 h-5 text-indigo-600" /> Operator Performance & Earnings
-                  </h4>
-                  <div className="flex flex-wrap items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-200 shadow-2xs">
-                    {/* Toggle */}
-                    <div className="flex bg-slate-205/80 p-0.5 rounded-xl text-xs font-bold leading-none shrink-0 self-start sm:self-auto">
-                      <button
-                        type="button"
-                        onClick={() => setOperatorsFilterType('month')}
-                        className={cn(
-                          "px-3 py-1.5 rounded-lg transition-all",
-                          operatorsFilterType === 'month' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
-                        )}
-                      >
-                        Month-wise
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setOperatorsFilterType('range')}
-                        className={cn(
-                          "px-3 py-1.5 rounded-lg transition-all",
-                          operatorsFilterType === 'range' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
-                        )}
-                      >
-                        Custom Range
-                      </button>
-                    </div>
-
-                    {/* Inputs */}
-                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                      {operatorsFilterType === 'month' ? (
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest pl-1">Month:</span>
-                          <input 
-                            type="month" 
-                            value={operatorsMonth}
-                            onChange={(e) => setOperatorsMonth(e.target.value)}
-                            className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest pl-1">From:</span>
-                            <input 
-                              type="date" 
-                              value={operatorsStartDate}
-                              onChange={(e) => setOperatorsStartDate(e.target.value)}
-                              className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                            />
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest pl-1">To:</span>
-                            <input 
-                              type="date" 
-                              value={operatorsEndDate}
-                              onChange={(e) => setOperatorsEndDate(e.target.value)}
-                              className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-slate-400 font-medium border-b border-black/5">
-                        <th className="text-left pb-3">Operator Name</th>
-                        <th className="text-left pb-3">Site</th>
-                        <th className="text-right pb-3">Total {stats?.overall.unit || 'Files'}</th>
-                        <th className="text-right pb-3">Total Pages</th>
-                        <th className="text-right pb-3 text-emerald-600">Earnings (Rs)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-black/5">
-                      {operatorsSummary.map((op) => {
-                        const earnings = (op.total_pages || 0) * (op.rate || 0.3);
-                        return (
-                          <tr key={op.id} className="group hover:bg-slate-50 transition-colors">
-                            <td className="py-4 font-medium text-slate-700">{op.name}</td>
-                            <td className="py-4 text-slate-500 text-xs">{op.site_name}</td>
-                            <td className="py-4 text-right font-mono text-slate-600">{op.total_files?.toLocaleString() || '0'}</td>
-                            <td className="py-4 text-right font-mono text-slate-600">{op.total_pages?.toLocaleString() || '0'}</td>
-                            <td className="py-4 text-right font-mono font-bold text-emerald-600">
-                              {earnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot className="border-t-2 border-slate-100">
-                      <tr className="bg-slate-50/50 font-bold">
-                        <td colSpan={2} className="py-4 text-slate-900 pl-4">GRAND TOTAL</td>
-                        <td className="py-4 text-right font-mono text-slate-900">
-                          {operatorsSummary.reduce((sum, op) => sum + (op.total_files || 0), 0).toLocaleString()}
-                        </td>
-                        <td className="py-4 text-right font-mono text-slate-900">
-                          {operatorsSummary.reduce((sum, op) => sum + (op.total_pages || 0), 0).toLocaleString()}
-                        </td>
-                        <td className="py-4 text-right font-mono text-emerald-700">
-                          {operatorsSummary.reduce((sum, op) => sum + ((op.total_pages || 0) * (op.rate || 0.3)), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </Card>
-            </motion.div>
-          ) : view === 'admin-management' && hasPermission('admin-management') ? (
-            <motion.div 
-              key="admin-management"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-8"
-            >
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                <Card className="border-emerald-100 bg-emerald-50/30">
-                  <h4 className="font-bold mb-4 flex items-center gap-2 text-emerald-900">
-                    <Users className="w-4 h-4" /> Add Operator to {sites.find(s => s.id === selectedSiteId)?.name}
-                  </h4>
-                  <div className="space-y-4">
-                    <input 
-                      type="text" 
-                      placeholder="Operator Name"
-                      value={newEmployeeName}
-                      onChange={(e) => setNewEmployeeName(e.target.value)}
-                      className="w-full bg-white border border-emerald-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20"
-                    />
-                    <button 
-                      onClick={handleAddEmployee}
-                      className="w-full bg-emerald-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all"
-                    >
-                      Add Operator
-                    </button>
-                    {addEmployeeMessage && (
-                      <div className={cn(
-                        "px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2",
-                        addEmployeeMessage.type === 'success' ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"
-                      )}>
-                        {addEmployeeMessage.type === 'success' ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
-                        {addEmployeeMessage.text}
-                      </div>
-                    )}
-                  </div>
-                </Card>
-
-                <Card className="border-blue-100 bg-blue-50/30">
-                  <h4 className="font-bold mb-4 flex items-center gap-2 text-blue-900">
-                    <TrendingUp className="w-4 h-4" /> Site Settings
-                  </h4>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-blue-600 uppercase">Target {stats?.overall.unit || 'Files'}</label>
-                      <div className="space-y-2">
-                        <input 
-                          type="number" 
-                          placeholder={stats?.overall.target_files?.toString() || '0'}
-                          value={updateTargetValue}
-                          onChange={(e) => setUpdateTargetValue(e.target.value)}
-                          className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20"
-                        />
-                        <button 
-                          onClick={handleUpdateTarget}
-                          className="w-full bg-blue-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-blue-700 transition-all"
-                        >
-                          Update Target
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 pt-2 border-t border-blue-100/50">
-                      <label className="text-[10px] font-bold text-blue-600 uppercase">Total Mouza Scanned</label>
-                      <div className="space-y-2">
-                        <input 
-                          type="number" 
-                          placeholder={(stats?.overall.total_mouza_scanned !== undefined ? stats.overall.total_mouza_scanned : 0).toString()}
-                          value={updateMouzaValue}
-                          onChange={(e) => setUpdateMouzaValue(e.target.value)}
-                          className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20"
-                        />
-                        <button 
-                          onClick={handleUpdateMouza}
-                          className="w-full bg-indigo-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all"
-                        >
-                          Update Mouza
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card className="border-indigo-100 bg-indigo-50/30">
-                  <h4 className="font-bold mb-4 flex items-center gap-2 text-indigo-950">
-                    <CalendarIcon className="w-4 h-4 text-indigo-600" /> Project Forecast
-                  </h4>
-                  {forecast && typeof forecast === 'object' ? (
-                    <div className="space-y-4">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Estimated Completion</span>
-                        <span className="text-xl font-bold text-indigo-900">{forecast.date}</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="p-3 bg-white rounded-xl border border-indigo-100">
-                          <span className="block text-[10px] font-bold text-slate-400 uppercase">Days Left</span>
-                          <span className="text-lg font-bold text-indigo-600">{forecast.days}</span>
-                        </div>
-                        <div className="p-3 bg-white rounded-xl border border-indigo-100">
-                          <span className="block text-[10px] font-bold text-slate-400 uppercase">Avg. Rate</span>
-                          <span className="text-lg font-bold text-indigo-600">{forecast.rate} <span className="text-xs font-normal">f/d</span></span>
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-slate-500 italic">
-                        * Based on scanning rate of the last 7 active days.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="py-8 text-center text-slate-400 text-sm italic">
-                      {forecast || "Insufficient data for forecast"}
-                    </div>
-                  )}
-                </Card>
-
-                <Card className="lg:col-span-3 border-slate-200 bg-white">
-                  <h4 className="font-bold mb-4 flex items-center gap-2 text-slate-900">
-                    <Users className="w-4 h-4 text-indigo-600" /> Manage Operators
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                    {adminData.filter(op => op.is_active).map(operator => (
-                      <div key={operator.employee_id} className="flex flex-col p-3 border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors gap-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-slate-700">{operator.name}</span>
-                          <div className="flex items-center gap-1">
-                            {confirmDeleteEmployeeId === operator.employee_id ? (
-                              <div className="flex gap-1">
-                                <button 
-                                  type="button"
-                                  onClick={() => handleDeleteEmployee(operator.employee_id)}
-                                  className="p-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all"
-                                  title="Confirm Deactivate"
-                                >
-                                  <Save className="w-3.5 h-3.5" />
-                                </button>
-                                <button 
-                                  type="button"
-                                  onClick={() => setConfirmDeleteEmployeeId(null)}
-                                  className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 transition-all"
-                                  title="Cancel"
-                                >
-                                  <ChevronLeft className="w-3.5 h-3.5" />
-                                </button>
+                              
+                              <div className="text-[10px] font-bold text-slate-400 uppercase">
+                                Rate: Rs {((operator as any).rate_per_page !== undefined && (operator as any).rate_per_page !== null) 
+                                  ? Number((operator as any).rate_per_page).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) 
+                                  : '0.30'} / page
                               </div>
-                            ) : (
-                              <>
-                                <button 
-                                  type="button"
-                                  onClick={() => {
-                                    setIsUpdatingRate(operator.employee_id);
-                                    setNewRateValue((operator as any).rate_per_page?.toString() || '0.30');
-                                  }}
-                                  className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                                  title="Set Rate"
-                                >
-                                  <TrendingUp className="w-4 h-4" />
-                                </button>
-                                <button 
-                                  type="button"
-                                  onClick={() => setConfirmDeleteEmployeeId(operator.employee_id)}
-                                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                                  title="Remove Operator"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </>
-                            )}
-                          </div>
+                            </div>
+                          ))}
+                          {adminData.filter(op => op.is_active).length === 0 && (
+                            <div className="col-span-full text-center py-4 text-slate-400 text-sm">
+                              No operators found for this site.
+                            </div>
+                          )}
                         </div>
-                        
-                        {isUpdatingRate === operator.employee_id && (
-                          <div className="flex items-center gap-2 mt-2">
-                            <input 
-                              type="number" 
-                              step="0.001"
-                              value={newRateValue}
-                              onChange={(e) => setNewRateValue(e.target.value)}
-                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-indigo-500"
-                              placeholder="Rate per page"
-                              autoFocus
-                            />
-                            <button 
-                              onClick={() => updateOperatorRate(operator.employee_id, parseFloat(newRateValue) || 0)}
-                              className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-                            >
-                              <Check className="w-3 h-3" />
-                            </button>
-                            <button 
-                              onClick={() => setIsUpdatingRate(null)}
-                              className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        )}
-                        
-                        <div className="text-[10px] font-bold text-slate-400 uppercase">
-                          Rate: Rs {((operator as any).rate_per_page !== undefined && (operator as any).rate_per_page !== null) 
-                            ? Number((operator as any).rate_per_page).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) 
-                            : '0.30'} / page
+                      </Card>
+                    </div>
+                  </motion.div>
+                )}
+
+                {adminActiveTab === 'records' && hasPermission('personal-records') && (
+                  <motion.div
+                    key="tab-records"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    className="space-y-6"
+                  >
+                    <Card className="lg:col-span-3">
+                      <div className="flex items-center justify-between mb-8">
+                        <h3 className="text-xl font-bold flex items-center gap-2">
+                          <TrendingUp className="w-6 h-6 text-indigo-600" />
+                          Personal Records
+                        </h3>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total {stats?.overall.unit || 'Files'} Scanned</span>
+                          {(!stats || stats.mode !== 'personal') ? (
+                            <div className="h-9 w-24 bg-slate-200 animate-pulse rounded-lg mt-1" />
+                          ) : (
+                            <span className="text-3xl font-bold text-slate-900">{stats?.overall.total_files?.toLocaleString()}</span>
+                          )}
+                        </div>
+                        <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100">
+                          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block mb-1">Total Pages Scanned</span>
+                          {(!stats || stats.mode !== 'personal') ? (
+                            <div className="h-9 w-24 bg-indigo-200 animate-pulse rounded-lg mt-1" />
+                          ) : (
+                            <span className="text-3xl font-bold text-indigo-900">{stats?.overall.total_pages?.toLocaleString()}</span>
+                          )}
+                        </div>
+                        <div className="p-6 bg-orange-50 rounded-2xl border border-orange-100">
+                          <span className="text-[10px] font-bold text-orange-600 uppercase tracking-wider block mb-1">EP</span>
+                          {(!stats || stats.mode !== 'personal') ? (
+                            <div className="h-9 w-24 bg-orange-200 animate-pulse rounded-lg mt-1" />
+                          ) : (
+                            <span className="text-3xl font-bold text-orange-900">
+                              {stats.monthly?.reduce((sum, m) => sum + (m.extra_pages || 0), 0).toLocaleString()}
+                            </span>
+                          )}
                         </div>
                       </div>
-                    ))}
-                    {adminData.filter(op => op.is_active).length === 0 && (
-                      <div className="col-span-full text-center py-4 text-slate-400 text-sm">
-                        No operators found for this site.
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              </div>
+                    </Card>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           ) : view === 'user-controls' ? (
             <motion.div 
