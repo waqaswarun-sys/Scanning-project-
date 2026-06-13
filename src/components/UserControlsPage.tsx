@@ -36,7 +36,6 @@ export default function UserControlsPage({ apiFetch, currentUser }: UserControls
     { id: 'admin-reports', label: 'Downloads' },
     { id: 'admin-sites', label: 'Manage Sites' },
     { id: 'admin-operators', label: 'Operators' },
-    { id: 'operator-summary', label: 'Operator Summary' },
     { id: 'admin-management', label: 'Settings' },
   ];
 

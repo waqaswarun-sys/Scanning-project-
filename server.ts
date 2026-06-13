@@ -1185,13 +1185,13 @@ async function startServer() {
   });
 
   app.get("/api/operators-summary", requireAuth, async (req: any, res) => {
-    const { siteId, month } = req.query;
+    const { siteId, month, startDate, endDate } = req.query;
     
     if (siteId && !checkSiteAccess(req.user, siteId as string)) {
       return res.status(403).json({ error: "Access denied to this site" });
     }
 
-    const cacheKey = `operators-summary-${siteId || 'all'}-${month || 'all'}-${req.user.id}`;
+    const cacheKey = `operators-summary-${siteId || 'all'}-${month || 'all'}-${startDate || 'all'}-${endDate || 'all'}-${req.user.id}`;
     const cached = getCache(cacheKey);
     if (cached) return res.json(cached);
 
@@ -1230,7 +1230,13 @@ async function startServer() {
       if (siteId) {
         scanningQuery = scanningQuery.where('site_id', '==', String(siteId));
       }
-      if (month) {
+      if (startDate) {
+        scanningQuery = scanningQuery.where('date', '>=', String(startDate));
+      }
+      if (endDate) {
+        scanningQuery = scanningQuery.where('date', '<=', String(endDate));
+      }
+      if (month && !startDate && !endDate) {
         scanningQuery = scanningQuery
           .where('date', '>=', month + "-01")
           .where('date', '<=', month + "-31");

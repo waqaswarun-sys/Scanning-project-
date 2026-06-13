@@ -84,7 +84,6 @@ export default function App() {
     'admin-sites' |
     'admin-operators' |
     'user-controls' |
-    'operator-summary' |
     'apps'
   >('main-view');
   const [sites, setSites] = useState<Site[]>([]);
@@ -106,6 +105,9 @@ export default function App() {
   const [exportStartDate, setExportStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [exportEndDate, setExportEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [operatorsMonth, setOperatorsMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [operatorsFilterType, setOperatorsFilterType] = useState<'month' | 'range'>('month');
+  const [operatorsStartDate, setOperatorsStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [operatorsEndDate, setOperatorsEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
 
   // Company State
   const [currentWeekStart, setCurrentWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
@@ -129,12 +131,6 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
-  // Operator Summary State
-  const [allOperators, setAllOperators] = useState<any[]>([]);
-  const [selectedOperatorId, setSelectedOperatorId] = useState<string | number | null>(null);
-  const [operatorSummary, setOperatorSummary] = useState<any[]>([]);
-  const [operatorDaily, setOperatorDaily] = useState<any[]>([]);
-  const [summaryMonth, setSummaryMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [isUpdatingRate, setIsUpdatingRate] = useState<string | number | null>(null);
   const [newRateValue, setNewRateValue] = useState('');
   const [isUpdatingSiteRate, setIsUpdatingSiteRate] = useState<string | number | null>(null);
@@ -215,7 +211,6 @@ export default function App() {
             if (user.role !== 'admin') {
               // Dashboard first if assigned, else first available permission
               if (permissions.includes('main-view')) return 'main-view';
-              if (permissions.includes('operator-summary')) return 'operator-summary';
               return permissions.length > 0 ? permissions[0] as any : 'main-view';
             }
             return currentView;
@@ -328,22 +323,7 @@ export default function App() {
     if (view === 'admin-operators') {
       fetchOperatorsSummary();
     }
-    if (view === 'operator-summary') {
-      fetchAllOperators();
-    }
-  }, [view, selectedSiteId, operatorsMonth]);
-
-  useEffect(() => {
-    if (view === 'operator-summary' && selectedOperatorId) {
-      fetchOperatorSummary();
-    }
-  }, [view, selectedOperatorId]);
-
-  useEffect(() => {
-    if (view === 'operator-summary' && selectedOperatorId && summaryMonth) {
-      fetchOperatorDaily();
-    }
-  }, [view, selectedOperatorId, summaryMonth]);
+  }, [view, selectedSiteId, operatorsMonth, operatorsFilterType, operatorsStartDate, operatorsEndDate]);
 
   useEffect(() => {
     if (view === 'admin-sites' && editPastSiteId && editPastDate) {
@@ -356,60 +336,6 @@ export default function App() {
       setEditPastSiteId(sitesSummary[0].id.toString());
     }
   }, [view, sitesSummary, editPastSiteId]);
-
-  const fetchAllOperators = async () => {
-    try {
-      const res = await apiFetch('/api/all-operators');
-      if (res.ok) {
-        const data = await res.json();
-        setAllOperators(data);
-
-        // If user is linked to an operator, always select that one
-        if (currentUser?.employee_id) {
-          setSelectedOperatorId(currentUser.employee_id);
-          return;
-        }
-
-        // Filter by selected site if admin
-        const filtered = selectedSiteId && currentUser?.role === 'admin'
-          ? data.filter((op: any) => String(op.site_id) === String(selectedSiteId))
-          : data;
-        if (filtered.length > 0) {
-          setSelectedOperatorId(filtered[0].id);
-        } else if (data.length > 0 && !selectedOperatorId) {
-          setSelectedOperatorId(data[0].id);
-        }
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const fetchOperatorSummary = async () => {
-    if (!selectedOperatorId) return;
-    try {
-      const res = await apiFetch(`/api/operator-summary/${selectedOperatorId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setOperatorSummary(data);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const fetchOperatorDaily = async () => {
-    if (!selectedOperatorId || !summaryMonth) return;
-    try {
-      const res = await apiFetch(`/api/operator-daily/${selectedOperatorId}?month=${summaryMonth}`);
-      if (res.ok) {
-        const data = await res.json();
-        setOperatorDaily(data);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   const updateOperatorRate = async (id: string | number, rate: number) => {
     try {
@@ -555,8 +481,17 @@ export default function App() {
   const fetchOperatorsSummary = async () => {
     try {
       let url = selectedSiteId ? `/api/operators-summary?siteId=${selectedSiteId}` : '/api/operators-summary';
-      if (operatorsMonth) {
-        url += (url.includes('?') ? '&' : '?') + `month=${operatorsMonth}`;
+      if (operatorsFilterType === 'month') {
+        if (operatorsMonth) {
+          url += (url.includes('?') ? '&' : '?') + `month=${operatorsMonth}`;
+        }
+      } else {
+        if (operatorsStartDate) {
+          url += (url.includes('?') ? '&' : '?') + `startDate=${operatorsStartDate}`;
+        }
+        if (operatorsEndDate) {
+          url += (url.includes('?') ? '&' : '?') + `endDate=${operatorsEndDate}`;
+        }
       }
       const res = await apiFetch(url);
       if (!res.ok) return;
@@ -1004,9 +939,9 @@ export default function App() {
   // Ordered views for swipe navigation based on user permissions
   const getSwipeViews = () => {
     if (currentUser?.role === 'admin') {
-      return ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'operator-summary', 'user-controls', 'apps'];
+      return ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'user-controls', 'apps'];
     }
-    const permOrder = ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'operator-summary', 'apps'];
+    const permOrder = ['main-view', 'personal-records', 'admin-data-entry', 'admin-reports', 'admin-sites', 'admin-operators', 'admin-management', 'apps'];
     return permOrder.filter(p => hasPermission(p) || p === 'apps');
   };
 
@@ -1166,19 +1101,6 @@ export default function App() {
                 Operators
               </button>
             )}
-            {hasPermission('operator-summary') && (
-              <button 
-                onClick={() => setView('operator-summary')}
-                className={cn(
-                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2",
-                  view === 'operator-summary' ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100/50" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <FileText className="w-3.5 h-3.5" />
-                Summary
-              </button>
-            )}
-
             {currentUser?.role === 'admin' && (
               <button 
                 onClick={() => setView('user-controls')}
@@ -1376,18 +1298,7 @@ export default function App() {
                           </>
                         )}
 
-                        {hasPermission('operator-summary') && (
-                          <button 
-                            onClick={() => { setView('operator-summary'); setIsMenuOpen(false); }}
-                            className={cn(
-                              "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
-                              view === 'operator-summary' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
-                            )}
-                          >
-                            <FileText className="w-4 h-4" />
-                            Operator Summary
-                          </button>
-                        )}
+
 
                       </div>
                     </motion.div>
@@ -1437,11 +1348,7 @@ export default function App() {
                             <TrendingUp className="w-4 h-4" /> Personal Records
                           </button>
                         )}
-                        {hasPermission('operator-summary') && (
-                          <button onClick={() => { setView('operator-summary'); setIsMenuOpen(false); }} className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all", view === 'operator-summary' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50")}>
-                            <FileText className="w-4 h-4" /> Operator Summary
-                          </button>
-                        )}
+
 
                       </div>
                     </motion.div>
@@ -2476,18 +2383,70 @@ export default function App() {
               className="space-y-8"
             >
               <Card className="border-slate-200 bg-white">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-slate-100 pb-4">
                   <h4 className="font-bold flex items-center gap-2 text-slate-900">
-                    <Users className="w-4 h-4 text-indigo-600" /> Operator Performance & Earnings
+                    <Users className="w-5 h-5 text-indigo-600" /> Operator Performance & Earnings
                   </h4>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Select Month:</span>
-                    <input 
-                      type="month" 
-                      value={operatorsMonth}
-                      onChange={(e) => setOperatorsMonth(e.target.value)}
-                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                    />
+                  <div className="flex flex-wrap items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-200 shadow-2xs">
+                    {/* Toggle */}
+                    <div className="flex bg-slate-205/80 p-0.5 rounded-xl text-xs font-bold leading-none shrink-0 self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => setOperatorsFilterType('month')}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg transition-all",
+                          operatorsFilterType === 'month' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
+                        )}
+                      >
+                        Month-wise
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOperatorsFilterType('range')}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg transition-all",
+                          operatorsFilterType === 'range' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
+                        )}
+                      >
+                        Custom Range
+                      </button>
+                    </div>
+
+                    {/* Inputs */}
+                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                      {operatorsFilterType === 'month' ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest pl-1">Month:</span>
+                          <input 
+                            type="month" 
+                            value={operatorsMonth}
+                            onChange={(e) => setOperatorsMonth(e.target.value)}
+                            className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest pl-1">From:</span>
+                            <input 
+                              type="date" 
+                              value={operatorsStartDate}
+                              onChange={(e) => setOperatorsStartDate(e.target.value)}
+                              className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest pl-1">To:</span>
+                            <input 
+                              type="date" 
+                              value={operatorsEndDate}
+                              onChange={(e) => setOperatorsEndDate(e.target.value)}
+                              className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -2756,138 +2715,6 @@ export default function App() {
               className="space-y-8"
             >
               <UserControlsPage apiFetch={apiFetch} currentUser={currentUser} />
-            </motion.div>
-          ) : view === 'operator-summary' && hasPermission('operator-summary') ? (
-            <motion.div 
-              key="operator-summary"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-8"
-            >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-3xl font-bold text-slate-900 tracking-tight">
-                    {currentUser?.employee_name 
-                      ? `${currentUser.employee_name} Summary`
-                      : `${allOperators.find(op => op.id === selectedOperatorId)?.name || 'Operator'} Summary`}
-                  </h2>
-                  <p className="text-slate-500 font-medium">View detailed performance per operator</p>
-                </div>
-                {!(currentUser?.role !== 'admin' && allOperators.length === 1) && (
-                  <div className="flex items-center gap-3 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
-                    <Users className="w-4 h-4 text-indigo-600 ml-2" />
-                    <select 
-                      value={selectedOperatorId || ''}
-                      onChange={(e) => setSelectedOperatorId(e.target.value)}
-                      className="bg-transparent text-sm font-bold text-slate-700 outline-none pr-4"
-                    >
-                      {allOperators
-                        .filter((op: any) => !selectedSiteId || String(op.site_id) === String(selectedSiteId))
-                        .map(op => (
-                          <option key={op.id} value={op.id}>{op.name} ({op.site_name})</option>
-                        ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Month Wise Summary */}
-                <Card className="lg:col-span-1">
-                  <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
-                    <CalendarIcon className="w-5 h-5 text-indigo-600" />
-                    Month Wise Summary
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-slate-400 font-medium border-b border-black/5">
-                          <th className="text-left pb-3">Month</th>
-                          <th className="text-right pb-3">{stats?.overall.unit || 'Files'}</th>
-                          <th className="text-right pb-3">Pages</th>
-                          <th className="text-right pb-3 text-emerald-600">Rs</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-black/5">
-                        {operatorSummary.map((m) => (
-                          <tr key={m.month} className="group hover:bg-slate-50 transition-colors">
-                            <td className="py-4 font-medium text-slate-700">{format(parseISO(m.month + '-01'), 'MMMM yyyy')}</td>
-                            <td className="py-4 text-right font-mono text-slate-600">{m.total_files?.toLocaleString()}</td>
-                            <td className="py-4 text-right font-mono text-slate-600">{m.total_pages?.toLocaleString()}</td>
-                            <td className="py-4 text-right font-mono font-bold text-emerald-600">{m.total_rs?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          </tr>
-                        ))}
-                        {operatorSummary.length === 0 && (
-                          <tr>
-                            <td colSpan={4} className="py-8 text-center text-slate-400 italic">No data found</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </Card>
-
-                {/* Daily Detailed View */}
-                <Card className="lg:col-span-2">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                    <h3 className="text-lg font-bold flex items-center gap-2">
-                      <TrendingUp className="w-5 h-5 text-indigo-600" />
-                      Daily Details
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Month:</span>
-                      <input 
-                        type="month" 
-                        value={summaryMonth}
-                        onChange={(e) => setSummaryMonth(e.target.value)}
-                        className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                      />
-                    </div>
-                  </div>
-                  <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-                    <table className="w-full text-sm">
-                      <thead className="sticky top-0 bg-white z-10">
-                        <tr className="text-slate-400 font-medium border-b border-black/5">
-                          <th className="text-left py-3">Date</th>
-                          <th className="text-right py-3">{stats?.overall.unit || 'Files'}</th>
-                          <th className="text-right py-3">Pages</th>
-                          <th className="text-right py-3 text-emerald-600">Rs</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-black/5">
-                        {operatorDaily.map((d) => (
-                          <tr key={d.date} className="group hover:bg-slate-50 transition-colors">
-                            <td className="py-4 font-medium text-slate-700">{format(parseISO(d.date), 'dd MMM yyyy')}</td>
-                            <td className="py-4 text-right font-mono text-slate-600">{d.files?.toLocaleString()}</td>
-                            <td className="py-4 text-right font-mono text-slate-600">{d.pages?.toLocaleString()}</td>
-                            <td className="py-4 text-right font-mono font-bold text-emerald-600">{d.rs?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          </tr>
-                        ))}
-                        {operatorDaily.length === 0 && (
-                          <tr>
-                            <td colSpan={4} className="py-8 text-center text-slate-400 italic">No data found for this month</td>
-                          </tr>
-                        )}
-                      </tbody>
-                      <tfoot className="sticky bottom-0 bg-slate-50 font-bold border-t-2 border-slate-200">
-                        <tr>
-                          <td className="py-4 pl-4">MONTH TOTAL</td>
-                          <td className="py-4 text-right font-mono">
-                            {operatorDaily.reduce((sum, d) => sum + (d.files || 0), 0).toLocaleString()}
-                          </td>
-                          <td className="py-4 text-right font-mono">
-                            {operatorDaily.reduce((sum, d) => sum + (d.pages || 0), 0).toLocaleString()}
-                          </td>
-                          <td className="py-4 text-right font-mono text-emerald-700">
-                            {operatorDaily.reduce((sum, d) => sum + (d.rs || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </Card>
-              </div>
             </motion.div>
           ) : view === 'apps' ? (
             <motion.div 
