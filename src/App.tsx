@@ -1081,6 +1081,250 @@ export default function App() {
     doc.save(`${siteName}_SCANNING_SUMMARY.pdf`);
   };
 
+  const downloadSkippedYearsCSV = () => {
+    if (!mouzasData || mouzasData.length === 0) {
+      alert("No Mouza data available to export. Please ensure registers have been added.");
+      return;
+    }
+
+    const endYearValue = 2007;
+
+    // Build CSV with BOM for proper Excel UTF-8 support (important for custom Urdu names, etc.)
+    let csvContent = "\uFEFF";
+    csvContent += "Sr. No.,Mouza Name,Minimum Scanned Year,Scanned Years Count,Existing Scanned Years,Skipped Years (up to 2007)\n";
+
+    mouzasData.forEach((m, idx) => {
+      const RHZList = m.RHZ || [];
+      const MutationList = m.Mutation || [];
+      const ShajraList = m.Shajra || [];
+      const allRegs = [...RHZList, ...MutationList, ...ShajraList];
+
+      // Read unique raw scanned years entered (e.g. "1885-1886")
+      const scannedRawYears = Array.from(new Set(allRegs.map((r: any) => r.years?.trim()).filter(Boolean)));
+      
+      const parseStartYear = (s: string): number | null => {
+        if (!s) return null;
+        const match = s.match(/(\d{4})/);
+        if (match) {
+          const y = parseInt(match[1], 10);
+          if (y >= 1000 && y <= 9999) return y;
+        }
+        return null;
+      };
+
+      // Sort raw year-ranges chronologically
+      scannedRawYears.sort((a, b) => {
+        const ya = parseStartYear(a) || 0;
+        const yb = parseStartYear(b) || 0;
+        return ya - yb;
+      });
+
+      const scannedStartYearsSet = new Set(
+        allRegs
+          .map((r: any) => parseStartYear(r.years))
+          .filter((y): y is number => y !== null)
+      );
+
+      let skippedYearsList: string[] = [];
+      let minYear = 0;
+
+      if (scannedStartYearsSet.size > 0) {
+        minYear = Math.min(...scannedStartYearsSet);
+        const maxStartYear = endYearValue - 1; // 2006 (corresponds to 2006 to 2007)
+
+        for (let yr = minYear; yr <= maxStartYear; yr++) {
+          if (!scannedStartYearsSet.has(yr)) {
+            skippedYearsList.push(`${yr} to ${yr + 1}`);
+          }
+        }
+      }
+
+      const mouzaNameEscaped = `"${m.name.replace(/"/g, '""')}"`;
+      const startYearStr = minYear ? minYear.toString() : "-";
+      const scannedStr = `"${scannedRawYears.join(", ").replace(/"/g, '""')}"`;
+      const skippedStr = `"${skippedYearsList.join(", ").replace(/"/g, '""')}"`;
+
+      csvContent += `${idx + 1},${mouzaNameEscaped},${startYearStr},${scannedRawYears.length},${scannedStr},${skippedStr}\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    
+    const site = sitesSummary.find(s => String(s.id) === String(selectedSiteId));
+    const sitePrefix = site ? site.name.replace(/\s+/g, '_').toUpperCase() : "MOUZA";
+    
+    link.download = `${sitePrefix}_MOUZAS_SKIPPED_YEARS_2007.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadSkippedYearsPDF = () => {
+    if (!mouzasData || mouzasData.length === 0) {
+      alert("No Mouza data available to export.");
+      return;
+    }
+
+    let ResolvedConstructor = jsPDF as any;
+    if (typeof ResolvedConstructor !== 'function') {
+      if (ResolvedConstructor && ResolvedConstructor.jsPDF) {
+        ResolvedConstructor = ResolvedConstructor.jsPDF;
+      } else if (ResolvedConstructor && ResolvedConstructor.default) {
+        ResolvedConstructor = ResolvedConstructor.default;
+      }
+    }
+
+    const doc = new ResolvedConstructor({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const primaryIndigo = [79, 70, 229];
+    const textDark = [30, 41, 59];
+    const borderSlate = [226, 232, 240];
+
+    const site = sitesSummary.find(s => String(s.id) === String(selectedSiteId));
+    const siteName = site ? site.name.toUpperCase() : "SITE";
+
+    let pageNum = 1;
+
+    const drawHeader = () => {
+      doc.setFillColor(primaryIndigo[0], primaryIndigo[1], primaryIndigo[2]);
+      doc.rect(0, 0, 210, 26, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(14);
+      doc.text(`${siteName} - MOUZAS GAP ANALYSIS REPORT`, 15, 11);
+
+      doc.setFontSize(8);
+      doc.setFont("Helvetica", "normal");
+      doc.text(`Generated: ${new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })} | Target End Year: 2007`, 15, 17);
+
+      doc.text(`Page ${pageNum}`, 185, 11);
+
+      // Header row background
+      doc.setFillColor(241, 245, 249);
+      doc.rect(15, 26, 180, 8, 'F');
+      doc.setDrawColor(borderSlate[0], borderSlate[1], borderSlate[2]);
+      doc.line(15, 26, 195, 26);
+      doc.line(15, 34, 195, 34);
+
+      doc.setTextColor(71, 85, 105);
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(8);
+      doc.text("Sr.", 17, 31);
+      doc.text("Mouza Name", 26, 31);
+      doc.text("Scanned Volumes / Years", 70, 31);
+      doc.text("Skipped Years (up to 2007)", 125, 31);
+    };
+
+    drawHeader();
+
+    let y = 39;
+
+    mouzasData.forEach((m, idx) => {
+      const RHZList = m.RHZ || [];
+      const MutationList = m.Mutation || [];
+      const ShajraList = m.Shajra || [];
+      const allRegs = [...RHZList, ...MutationList, ...ShajraList];
+
+      const scannedRawYears = Array.from(new Set(allRegs.map((r: any) => r.years?.trim()).filter(Boolean)));
+      
+      const parseStartYear = (s: string): number | null => {
+        if (!s) return null;
+        const match = s.match(/(\d{4})/);
+        if (match) {
+          const y = parseInt(match[1], 10);
+          if (y >= 1000 && y <= 9999) return y;
+        }
+        return null;
+      };
+
+      scannedRawYears.sort((a, b) => {
+        const ya = parseStartYear(a) || 0;
+        const yb = parseStartYear(b) || 0;
+        return ya - yb;
+      });
+
+      const scannedStartYearsSet = new Set(
+        allRegs
+          .map((r: any) => parseStartYear(r.years))
+          .filter((y): y is number => y !== null)
+      );
+
+      let skippedYearsList: string[] = [];
+      let minYear = 0;
+
+      if (scannedStartYearsSet.size > 0) {
+        minYear = Math.min(...scannedStartYearsSet);
+        const maxStartYear = 2006;
+
+        for (let yr = minYear; yr <= maxStartYear; yr++) {
+          if (!scannedStartYearsSet.has(yr)) {
+            skippedYearsList.push(`${yr}-${yr + 1}`);
+          }
+        }
+      }
+
+      const scannedTextRaw = scannedRawYears.length > 0 ? scannedRawYears.join(", ") : "-";
+      const skippedTextRaw = skippedYearsList.length > 0 ? skippedYearsList.join(", ") : "-";
+
+      const scannedLines = doc.splitTextToSize(scannedTextRaw, 50);
+      const skippedLines = doc.splitTextToSize(skippedTextRaw, 65);
+
+      const rowHeight = Math.max(scannedLines.length, skippedLines.length) * 4.5 + 4;
+
+      if (y + rowHeight > 280) {
+        doc.addPage();
+        pageNum++;
+        drawHeader();
+        y = 39;
+      }
+
+      if (idx % 2 === 1) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(15, y - 3, 180, rowHeight, 'F');
+      }
+
+      doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(8);
+      doc.text(`${idx + 1}`, 17, y);
+      
+      doc.setFont("Helvetica", "bold");
+      doc.text(m.name || '', 26, y);
+
+      doc.setFont("Helvetica", "normal");
+      scannedLines.forEach((line: string, i: number) => {
+        doc.text(line, 70, y + i * 4.5);
+      });
+
+      if (skippedYearsList.length > 0) {
+        doc.setTextColor(180, 83, 9); // amber 700
+      } else {
+        doc.setTextColor(100, 116, 139); // slate 500
+      }
+      
+      skippedLines.forEach((line: string, i: number) => {
+        doc.text(line, 125, y + i * 4.5);
+      });
+
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.3);
+      doc.line(15, y + rowHeight - 3, 195, y + rowHeight - 3);
+
+      y += rowHeight;
+    });
+
+    const sitePrefix = site ? site.name.replace(/\s+/g, '_').toUpperCase() : "MOUZA";
+    doc.save(`${sitePrefix}_MOUZAS_SKIPPED_YEARS_2007.pdf`);
+  };
+
   const handleAddSite = async () => {
     if (!newSiteName) return;
     try {
@@ -2049,6 +2293,22 @@ export default function App() {
                       className="bg-indigo-600 text-white px-6 h-[42px] rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20"
                     >
                       {isSaving ? 'Saving...' : <><Save className="w-4 h-4" /> Save All Progress</>}
+                    </button>
+                    <button 
+                      onClick={downloadSkippedYearsCSV}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 h-[42px] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-lg shadow-emerald-500/10 cursor-pointer"
+                      title="Download Excel CSV containing Mouzas existing and skipped years"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download Mouza CSV (2007)
+                    </button>
+                    <button 
+                      onClick={downloadSkippedYearsPDF}
+                      className="bg-teal-600 hover:bg-teal-700 text-white px-4 h-[42px] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-lg shadow-teal-500/10 cursor-pointer"
+                      title="Download PDF report containing Mouzas existing and skipped years"
+                    >
+                      <FileText className="w-4 h-4" />
+                      Download Mouza PDF (2007)
                     </button>
                   </div>
                 </div>
