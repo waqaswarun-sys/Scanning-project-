@@ -2,6 +2,8 @@ export interface Site {
   id: string | number;
   name: string;
   target_files: number;
+  link?: string;
+  total_mouza_scanned?: number;
 }
 
 export interface Employee {

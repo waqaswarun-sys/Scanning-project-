@@ -1172,7 +1172,9 @@ async function startServer() {
           extra_pages: extraPages,
           default_extra_pages: siteData.default_extra_pages || 0,
           rate: siteData.rate || 0.3,
-          unit: siteData.unit || 'Files'
+          unit: siteData.unit || 'Files',
+          total_mouza_scanned: siteData.total_mouza_scanned || 0,
+          link: siteData.link || ''
         };
       }).filter(Boolean);
 
@@ -1990,7 +1992,7 @@ async function startServer() {
     if (!checkSiteAccess(req.user, req.params.id, 'admin-sites')) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    const { target_files, rate, unit, total_mouza_scanned, default_extra_pages } = req.body;
+    const { target_files, rate, unit, total_mouza_scanned, default_extra_pages, link } = req.body;
     try {
       const updateData: any = {
         updated_at: FieldValue.serverTimestamp()
@@ -2000,6 +2002,7 @@ async function startServer() {
       if (unit !== undefined) updateData.unit = String(unit);
       if (total_mouza_scanned !== undefined) updateData.total_mouza_scanned = Number(total_mouza_scanned);
       if (default_extra_pages !== undefined) updateData.default_extra_pages = Number(default_extra_pages);
+      if (link !== undefined) updateData.link = String(link);
 
       await db.collection('sites').doc(req.params.id).update(updateData);
 
@@ -2076,7 +2079,7 @@ async function startServer() {
 
   app.post("/api/sites", requireAuth, async (req: any, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
-    const { name, target_files, rate, unit, total_mouza_scanned, default_extra_pages } = req.body;
+    const { name, target_files, rate, unit, total_mouza_scanned, default_extra_pages, link } = req.body;
     
     if (!name || typeof name !== 'string' || name.length < 2 || name.length > 50) {
       return res.status(400).json({ error: "Site name must be between 2 and 50 characters" });
@@ -2090,10 +2093,11 @@ async function startServer() {
         rate: rate || 0.3,
         unit: unit || 'Files',
         default_extra_pages: default_extra_pages || 0,
+        link: link || '',
         created_at: FieldValue.serverTimestamp()
       });
       clearCache('sites-summary');
-      res.json({ id: docRef.id, name, target_files, total_mouza_scanned: total_mouza_scanned || 0, rate: rate || 0.3, unit: unit || 'Files', default_extra_pages: default_extra_pages || 0 });
+      res.json({ id: docRef.id, name, target_files, total_mouza_scanned: total_mouza_scanned || 0, rate: rate || 0.3, unit: unit || 'Files', default_extra_pages: default_extra_pages || 0, link: link || '' });
     } catch (err) {
       console.error("Site create error:", err);
       res.status(500).json({ error: "Failed to create site" });

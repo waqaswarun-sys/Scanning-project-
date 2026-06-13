@@ -118,9 +118,11 @@ export default function App() {
   const [newSiteRate, setNewSiteRate] = useState('0.3');
   const [newSiteUnit, setNewSiteUnit] = useState('Files');
   const [newSiteDefaultExtraPages, setNewSiteDefaultExtraPages] = useState('0');
+  const [newSiteLink, setNewSiteLink] = useState('');
   const [newEmployeeName, setNewEmployeeName] = useState('');
   const [updateTargetValue, setUpdateTargetValue] = useState('');
   const [updateMouzaValue, setUpdateMouzaValue] = useState('');
+  const [updateLinkValue, setUpdateLinkValue] = useState('');
   const [confirmDeleteSite, setConfirmDeleteSite] = useState<string | number | null>(null);
   const [confirmDeleteEmployeeId, setConfirmDeleteEmployeeId] = useState<string | number | null>(null);
   const [copiedDate, setCopiedDate] = useState<string | null>(null);
@@ -805,7 +807,8 @@ export default function App() {
           target_files: parseInt(newSiteTarget) || 0,
           rate: parseFloat(newSiteRate) || 0.3,
           unit: newSiteUnit || 'Files',
-          default_extra_pages: parseInt(newSiteDefaultExtraPages) || 0
+          default_extra_pages: parseInt(newSiteDefaultExtraPages) || 0,
+          link: newSiteLink || ''
         })
       });
       if (res.ok) {
@@ -814,6 +817,7 @@ export default function App() {
         setNewSiteRate('0.3');
         setNewSiteUnit('Files');
         setNewSiteDefaultExtraPages('0');
+        setNewSiteLink('');
         fetchSites();
         fetchSitesSummary();
       }
@@ -872,6 +876,22 @@ export default function App() {
         body: JSON.stringify({ total_mouza_scanned: parseInt(updateMouzaValue) || 0 })
       });
       setUpdateMouzaValue('');
+      fetchStats();
+      fetchSites();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateLink = async () => {
+    if (!selectedSiteId || !updateLinkValue) return;
+    try {
+      await apiFetch(`/api/sites/${selectedSiteId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link: updateLinkValue })
+      });
+      setUpdateLinkValue('');
       fetchStats();
       fetchSites();
     } catch (err) {
@@ -1299,6 +1319,20 @@ export default function App() {
           )}
 
           <div className="flex items-center gap-2 sm:gap-4 ml-auto sm:ml-4 sm:pl-4 sm:border-l border-slate-200">
+            {/* If active site has a link set, show a visit link button */}
+            {sites.find(s => s.id === selectedSiteId)?.link && (
+              <a
+                href={sites.find(s => s.id === selectedSiteId)?.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700 rounded-xl px-2.5 py-1.5 text-xs font-bold transition-all shadow-sm"
+                title="Go to site link"
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Go to Site</span>
+              </a>
+            )}
+
             {/* Site selector — admin always, non-admin only if 2+ sites */}
             {(currentUser?.role === 'admin' || (currentUser?.role !== 'admin' && sites.length > 1)) && (
               <div className="relative">
@@ -2081,6 +2115,16 @@ export default function App() {
                               className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-505/20 font-bold"
                             />
                           </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-indigo-400 uppercase ml-1">Site Link (Optional URL)</label>
+                            <input 
+                              type="text" 
+                              placeholder="e.g. https://site-link.com"
+                              value={newSiteLink}
+                              onChange={(e) => setNewSiteLink(e.target.value)}
+                              className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                            />
+                          </div>
                           <button 
                             type="button"
                             onClick={handleAddSite}
@@ -2709,6 +2753,41 @@ export default function App() {
                             className="w-full bg-indigo-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all font-inherit"
                           >
                             Update Mouza
+                          </button>
+                        </div>
+                      </div>
+
+                      {sites.find(s => s.id === selectedSiteId)?.link && (
+                        <div className="space-y-2 pt-2 border-t border-blue-100/50">
+                          <span className="text-[10px] font-bold text-blue-600 uppercase block">Go to Site Link</span>
+                          <a
+                            href={sites.find(s => s.id === selectedSiteId)?.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-sm mt-1 cursor-pointer font-inherit"
+                            id="visit-site-btn"
+                          >
+                            <Globe className="w-4 h-4" /> Click to Go to Site
+                          </a>
+                        </div>
+                      )}
+
+                      <div className="space-y-2 pt-2 border-t border-blue-100/50">
+                        <label className="text-[10px] font-bold text-blue-600 uppercase">Site Link (URL)</label>
+                        <div className="space-y-2">
+                          <input 
+                            type="text" 
+                            placeholder={sites.find(s => s.id === selectedSiteId)?.link || 'No link set yet'}
+                            value={updateLinkValue}
+                            onChange={(e) => setUpdateLinkValue(e.target.value)}
+                            className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20"
+                          />
+                          <button 
+                            type="button"
+                            onClick={handleUpdateLink}
+                            className="w-full bg-teal-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-teal-700 transition-all font-inherit"
+                          >
+                            Update Link
                           </button>
                         </div>
                       </div>
