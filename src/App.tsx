@@ -57,21 +57,50 @@ const Card = ({ children, className }: { children: React.ReactNode; className?: 
   </div>
 );
 
-const StatCard = ({ title, value, icon: Icon, colorClass, loading }: { title: string; value: string | number; icon: any; colorClass: string; loading?: boolean }) => (
-  <Card className="flex items-center gap-2 md:gap-4 p-3 md:p-6">
-    <div className={cn("p-2 md:p-3 rounded-xl shrink-0", colorClass)}>
-      <Icon className="w-4 h-4 md:w-6 md:h-6 text-white" />
-    </div>
-    <div className="min-w-0">
-      <p className="text-[9px] md:text-sm font-medium text-slate-500 uppercase tracking-wider truncate">{title}</p>
-      {loading ? (
-        <div className="h-6 md:h-8 w-16 md:w-24 bg-slate-100 animate-pulse rounded-lg mt-1" />
-      ) : (
-        <h3 className="text-lg md:text-2xl font-bold text-slate-900">{value}</h3>
-      )}
-    </div>
-  </Card>
-);
+const StatCard = ({ title, value, icon: Icon, colorClass, loading, href }: { title: string; value: string | number; icon: any; colorClass: string; loading?: boolean; href?: string }) => {
+  const cardContent = (
+    <Card className={cn(
+      "flex items-center gap-2 md:gap-4 p-3 md:p-6 transition-all duration-300", 
+      href ? "hover:bg-slate-50 hover:border-emerald-200 hover:shadow-md cursor-pointer group" : ""
+    )}>
+      <div className={cn(
+        "p-2 md:p-3 rounded-xl shrink-0 transition-transform duration-300", 
+        colorClass,
+        href ? "group-hover:scale-105" : ""
+      )}>
+        <Icon className="w-4 h-4 md:w-6 md:h-6 text-white" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[9px] md:text-sm font-medium text-slate-500 uppercase tracking-wider truncate flex items-center gap-1">
+          {title}
+          {href && <Globe className="w-3.5 h-3.5 text-emerald-500 animate-pulse inline shrink-0" />}
+        </p>
+        {loading ? (
+          <div className="h-6 md:h-8 w-16 md:w-24 bg-slate-100 animate-pulse rounded-lg mt-1" />
+        ) : (
+          <h3 className="text-lg md:text-2xl font-bold text-slate-900 flex items-center gap-2">
+            {value}
+            {href && (
+              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 uppercase tracking-wider group-hover:bg-emerald-100 group-hover:text-emerald-800 transition-colors">
+                Visit Link
+              </span>
+            )}
+          </h3>
+        )}
+      </div>
+    </Card>
+  );
+
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="block focus:outline-none">
+        {cardContent}
+      </a>
+    );
+  }
+
+  return cardContent;
+};
 
 // --- Main App ---
 
@@ -140,6 +169,8 @@ export default function App() {
   const [newSiteUnitValue, setNewSiteUnitValue] = useState('');
   const [isUpdatingSiteDefaultEP, setIsUpdatingSiteDefaultEP] = useState<string | number | null>(null);
   const [newSiteDefaultEPValue, setNewSiteDefaultEPValue] = useState('');
+  const [isUpdatingSiteLink, setIsUpdatingSiteLink] = useState<string | number | null>(null);
+  const [newSiteLinkValue, setNewSiteLinkValue] = useState('');
 
   // Past Extra Pages Editor States
   const [editPastSiteId, setEditPastSiteId] = useState<string>('');
@@ -417,6 +448,25 @@ export default function App() {
       if (res.ok) {
         setIsUpdatingSiteDefaultEP(null);
         setNewSiteDefaultEPValue('');
+        fetchSites();
+        fetchSitesSummary();
+        fetchStats();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const updateSiteLink = async (id: string | number, link: string) => {
+    try {
+      const res = await apiFetch(`/api/sites/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link })
+      });
+      if (res.ok) {
+        setIsUpdatingSiteLink(null);
+        setNewSiteLinkValue('');
         fetchSites();
         fetchSitesSummary();
         fetchStats();
@@ -1326,10 +1376,10 @@ export default function App() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700 rounded-xl px-2.5 py-1.5 text-xs font-bold transition-all shadow-sm"
-                title="Go to site link"
+                title="Mouza Details"
               >
                 <Globe className="w-3.5 h-3.5" />
-                <span className="hidden md:inline">Go to Site</span>
+                <span className="hidden md:inline">Mouza Details</span>
               </a>
             )}
 
@@ -1448,6 +1498,7 @@ export default function App() {
                   icon={Map} 
                   colorClass="bg-emerald-500"
                   loading={!stats || stats.mode !== 'main'}
+                  href={sites.find(s => s.id === selectedSiteId)?.link || undefined}
                 />
               </div>
 
@@ -1624,6 +1675,16 @@ export default function App() {
                     >
                       {isSaving ? 'Saving...' : <><Save className="w-4 h-4" /> Save All Progress</>}
                     </button>
+                    {sites.find(s => s.id === selectedSiteId)?.link && (
+                      <a 
+                        href={sites.find(s => s.id === selectedSiteId)?.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 h-[42px] rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-emerald-550/20 font-inherit"
+                      >
+                        <Globe className="w-4 h-4" /> Mouza Entry
+                      </a>
+                    )}
 
                   </div>
                 </div>
@@ -2147,6 +2208,7 @@ export default function App() {
                                 <th className="text-right pb-3">Rate</th>
                                 <th className="text-right pb-3">Unit</th>
                                 <th className="text-right pb-3 text-indigo-500">Default EP</th>
+                                <th className="text-right pb-3 text-emerald-600">Site Link</th>
                                 <th className="text-right pb-3 text-orange-600">Total EP</th>
                                 <th className="text-right pb-3">Total Scanned</th>
                                 <th className="text-right pb-3">Total Pages</th>
@@ -2297,6 +2359,60 @@ export default function App() {
                                       </div>
                                     )}
                                   </td>
+                                  {/* Site Link inline configuration */}
+                                  <td className="py-2 text-right text-slate-500 text-xs text-nowrap">
+                                    {isUpdatingSiteLink === site.id ? (
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        <input 
+                                          type="text" 
+                                          value={newSiteLinkValue}
+                                          onChange={(e) => setNewSiteLinkValue(e.target.value)}
+                                          placeholder="https://..."
+                                          className="w-28 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                                          autoFocus
+                                        />
+                                        <button 
+                                          type="button"
+                                          onClick={() => updateSiteLink(site.id, newSiteLinkValue)}
+                                          className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition font-inherit"
+                                          title="Save"
+                                        >
+                                          <Check className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button 
+                                          type="button"
+                                          onClick={() => setIsUpdatingSiteLink(null)}
+                                          className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition font-inherit"
+                                          title="Cancel"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
+                                        <span className="truncate max-w-[120px]" title={site.link || 'No Link'}>
+                                          {site.link ? (
+                                            <a href={site.link} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline text-xs font-semibold">
+                                              {site.link.replace(/^https?:\/\//, '')}
+                                            </a>
+                                          ) : (
+                                            <span className="text-slate-350 italic">No Link</span>
+                                          )}
+                                        </span>
+                                        <button 
+                                          type="button"
+                                          onClick={() => {
+                                            setIsUpdatingSiteLink(site.id);
+                                            setNewSiteLinkValue(site.link || '');
+                                          }}
+                                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                          title="Edit Site Link"
+                                        >
+                                          <Edit className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </td>
                                   <td className="py-4 text-right font-mono text-orange-600">{site.extra_pages?.toLocaleString() || '0'}</td>
                                   <td className="py-4 text-right font-mono text-slate-600">{site.total_files?.toLocaleString() || '0'}</td>
                                   <td className="py-4 text-right font-mono text-slate-600">{site.total_pages?.toLocaleString() || '0'}</td>
@@ -2340,6 +2456,7 @@ export default function App() {
                                 <td className="py-4 text-right font-mono text-indigo-650">
                                   {sitesSummary.reduce((sum, s) => sum + (s.default_extra_pages || 0), 0).toLocaleString()}
                                 </td>
+                                <td className="py-4"></td>
                                 <td className="py-4 text-right font-mono text-orange-700">
                                   {sitesSummary.reduce((sum, s) => sum + (s.extra_pages || 0), 0).toLocaleString()}
                                 </td>
@@ -2756,21 +2873,6 @@ export default function App() {
                           </button>
                         </div>
                       </div>
-
-                      {sites.find(s => s.id === selectedSiteId)?.link && (
-                        <div className="space-y-2 pt-2 border-t border-blue-100/50">
-                          <span className="text-[10px] font-bold text-blue-600 uppercase block">Go to Site Link</span>
-                          <a
-                            href={sites.find(s => s.id === selectedSiteId)?.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-sm mt-1 cursor-pointer font-inherit"
-                            id="visit-site-btn"
-                          >
-                            <Globe className="w-4 h-4" /> Click to Go to Site
-                          </a>
-                        </div>
-                      )}
 
                       <div className="space-y-2 pt-2 border-t border-blue-100/50">
                         <label className="text-[10px] font-bold text-blue-600 uppercase">Site Link (URL)</label>
