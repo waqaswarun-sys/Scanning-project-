@@ -13,6 +13,7 @@ import {
   TrendingUp,
   Users,
   FileText,
+  FileSpreadsheet,
   Layers,
   Copy,
   Check,
@@ -126,7 +127,7 @@ export default function App() {
   const [adminData, setAdminData] = useState<ScanningData[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [isDownloading, setIsDownloading] = useState<'personal' | 'main' | null>(null);
+  const [isDownloading, setIsDownloading] = useState<'personal' | 'main' | 'salary' | null>(null);
   const [addEmployeeMessage, setAddEmployeeMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [exportMonth, setExportMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [exportType, setExportType] = useState<'month' | 'range'>('month');
@@ -740,6 +741,44 @@ export default function App() {
         const blob = await res.blob();
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsDownloading(null);
+    }
+  };
+
+  const downloadSalarySheet = async () => {
+    if (!selectedSiteId) return;
+    setIsDownloading('salary');
+    const token = localStorage.getItem('authToken');
+    
+    let url = `/api/export-salary/${selectedSiteId}?token=${token || ''}`;
+    let filename = `Salary_Sheet.xls`;
+    if (exportType === 'month') {
+      url += `&month=${exportMonth}`;
+    } else {
+      url += `&startDate=${exportStartDate}&endDate=${exportEndDate}`;
+    }
+
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        // Extract content disposition filename if available, else default
+        const contentDisp = res.headers.get('content-disposition');
+        if (contentDisp) {
+          const match = contentDisp.match(/filename="?([^"]+)"?/);
+          if (match && match[1]) {
+            filename = match[1];
+          }
+        }
         a.download = filename;
         a.click();
         URL.revokeObjectURL(a.href);
@@ -2112,12 +2151,12 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                           <button 
                             type="button"
                             onClick={() => downloadReport('personal')}
                             disabled={isDownloading !== null}
-                            className="flex flex-col items-center justify-center p-6 bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all group disabled:opacity-60 font-inherit"
+                            className="flex flex-col items-center justify-center p-6 bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all group disabled:opacity-60 font-inherit cursor-pointer"
                           >
                             {isDownloading === 'personal' ? (
                               <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mb-2" />
@@ -2131,7 +2170,7 @@ export default function App() {
                             type="button"
                             onClick={() => downloadReport('main')}
                             disabled={isDownloading !== null}
-                            className="flex flex-col items-center justify-center p-6 bg-indigo-600 rounded-2xl hover:bg-indigo-700 transition-all group shadow-lg shadow-indigo-500/20 disabled:opacity-60 font-inherit"
+                            className="flex flex-col items-center justify-center p-6 bg-indigo-600 rounded-2xl hover:bg-indigo-700 transition-all group shadow-lg shadow-indigo-500/20 disabled:opacity-60 font-inherit cursor-pointer"
                           >
                             {isDownloading === 'main' ? (
                               <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-2" />
@@ -2143,8 +2182,22 @@ export default function App() {
                           </button>
                           <button 
                             type="button"
+                            onClick={downloadSalarySheet}
+                            disabled={isDownloading !== null}
+                            className="flex flex-col items-center justify-center p-6 bg-teal-600 rounded-2xl hover:bg-teal-700 text-white transition-all group shadow-lg shadow-teal-500/20 disabled:opacity-60 font-inherit cursor-pointer"
+                          >
+                            {isDownloading === 'salary' ? (
+                              <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-2" />
+                            ) : (
+                              <FileSpreadsheet className="w-8 h-8 text-white/80 mb-2 group-hover:text-white transition-colors" />
+                            )}
+                            <span className="text-sm font-bold">Salary Sheet</span>
+                            <span className="text-[10px] text-teal-200 uppercase mt-1">Sallery Sheet (Urdu Format)</span>
+                          </button>
+                          <button 
+                            type="button"
                             onClick={downloadPDFReport}
-                            className="flex flex-col items-center justify-center p-6 bg-rose-600 rounded-2xl hover:bg-rose-700 text-white transition-all group shadow-lg shadow-rose-550/20 font-inherit"
+                            className="flex flex-col items-center justify-center p-6 bg-rose-600 rounded-2xl hover:bg-rose-700 text-white transition-all group shadow-lg shadow-rose-550/20 font-inherit cursor-pointer"
                           >
                             <Layers className="w-8 h-8 text-rose-200 mb-2 group-hover:text-white transition-colors" />
                             <span className="text-sm font-bold">PDF Summary</span>

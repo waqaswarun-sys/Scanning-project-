@@ -1952,6 +1952,264 @@ async function startServer() {
     }
   });
 
+  app.get("/api/export-salary/:siteId", requireAuth, async (req: any, res) => {
+    const siteId = req.params.siteId;
+    if (!checkSiteAccess(req.user, siteId, 'admin-reports')) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    const monthStr = req.query.month as string;
+    const startDateQuery = req.query.startDate as string;
+    const endDateQuery = req.query.endDate as string;
+    
+    try {
+      const siteDoc = await db.collection('sites').doc(siteId).get();
+      if (!siteDoc.exists) return res.status(404).json({ error: "Site not found" });
+      const site = siteDoc.data();
+
+      const employeesSnapshot = await db.collection('employees').where('site_id', '==', siteId).get();
+      const employees = employeesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+
+      let startDate: Date;
+      let endDate: Date;
+      let queryStartStr: string;
+      let queryEndStr: string;
+
+      if (startDateQuery && endDateQuery) {
+        startDate = parseISO(startDateQuery);
+        endDate = parseISO(endDateQuery);
+        queryStartStr = startDateQuery;
+        queryEndStr = endDateQuery;
+      } else {
+        const activeMonth = monthStr || format(new Date(), 'yyyy-MM');
+        startDate = startOfMonth(parseISO(activeMonth + "-01"));
+        endDate = endOfMonth(startDate);
+        queryStartStr = format(startDate, 'yyyy-MM-dd');
+        queryEndStr = format(endDate, 'yyyy-MM-dd');
+      }
+
+      const scanningSnapshot = await db.collection('scanning_data')
+        .where('site_id', '==', siteId)
+        .where('date', '>=', queryStartStr)
+        .where('date', '<=', queryEndStr)
+        .get();
+      const scanningData = scanningSnapshot.docs.map(doc => doc.data());
+
+      const extraSnapshot = await db.collection('daily_extra_pages')
+        .where('site_id', '==', siteId)
+        .where('date', '>=', queryStartStr)
+        .where('date', '<=', queryEndStr)
+        .get();
+      const extraPagesData = extraSnapshot.docs.map(doc => doc.data());
+
+      let monthLabel = '';
+      if (startDateQuery && endDateQuery) {
+        if (format(startDate, 'yyyy') === format(endDate, 'yyyy')) {
+          if (format(startDate, 'MM') === format(endDate, 'MM')) {
+            monthLabel = `${format(startDate, 'MMMM yyyy')}`;
+          } else {
+            monthLabel = `${format(startDate, 'MMMM')} & ${format(endDate, 'MMMM yyyy')}`;
+          }
+        } else {
+          monthLabel = `${format(startDate, 'MMMM yyyy')} to ${format(endDate, 'MMMM yyyy')}`;
+        }
+      } else {
+        const activeMonth = monthStr || format(new Date(), 'yyyy-MM');
+        const sDate = parseISO(activeMonth + "-01");
+        monthLabel = format(sDate, 'MMMM yyyy');
+      }
+
+      let totalPagesAll = 0;
+      let totalRegistersAll = 0;
+      let totalMouzasAll = 0;
+      let totalClicksAll = 0;
+      let totalSalaryAll = 0;
+      let totalFixedAll = 0;
+
+      const rowsHtml = employees.map((e, index) => {
+        const eFiles = scanningData.filter(d => d.employee_id === e.id).reduce((sum, d) => sum + (d.files || 0), 0);
+        let ePages = scanningData.filter(d => d.employee_id === e.id).reduce((sum, d) => sum + (d.pages || 0), 0);
+        
+        // Split extra pages (Main Mode)
+        extraPagesData.forEach(ep => {
+          const activeOnThisDay = scanningData.filter(d => d.date === ep.date);
+          const activeIds = activeOnThisDay.map(d => d.employee_id);
+          const isWorkingThisDay = activeIds.includes(e.id);
+          if (isWorkingThisDay) {
+            ePages += getDeterministicSplit(ep.extra_pages, e.id, activeIds, ep.date);
+          }
+        });
+
+        // Count unique mouzas
+        const employeeDayData = scanningData.filter(d => d.employee_id === e.id);
+        const mouzaNames = new Set<string>();
+        employeeDayData.forEach(d => {
+          if (Array.isArray(d.mouzas)) {
+            d.mouzas.forEach(m => {
+              if (m.name) {
+                mouzaNames.add(m.name.trim().toUpperCase());
+              }
+            });
+          }
+        });
+        const mouzasCount = mouzaNames.size;
+
+        const isSupervisor = e.name.toLowerCase().includes('supervisor') || e.name.toLowerCase().includes('qudsia') || e.name.toLowerCase().includes('admin');
+        const roleStr = isSupervisor ? 's.supervisor' : 'Scanning Operator';
+        const shiftStr = ePages > 50000 ? 'Morning/Evening' : 'Morning';
+        const clicks = ePages / 2;
+        const rate = e.rate_per_page || site?.rate || 0.35;
+        const salary = Math.round(clicks * rate);
+        const fixedSalary = isSupervisor ? 8000 : 0;
+
+        // Add to totals
+        totalPagesAll += ePages;
+        totalRegistersAll += eFiles;
+        totalMouzasAll += mouzasCount;
+        totalClicksAll += clicks;
+        totalSalaryAll += salary;
+        totalFixedAll += fixedSalary;
+
+        return `
+  <tr>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: center; vertical-align: middle;">${index + 1}</td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: left; vertical-align: middle;">${roleStr}</td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: center; vertical-align: middle;">${shiftStr}</td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: left; vertical-align: middle; font-weight: bold;">${e.name}</td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;">${ePages.toLocaleString()}</td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;">${eFiles.toLocaleString()}</td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;">${mouzasCount}</td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;">${clicks.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;">${rate.toFixed(2)}</td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle; font-weight: bold;">${salary.toLocaleString()}</td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;">${fixedSalary > 0 ? fixedSalary.toLocaleString() : ''}</td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;"></td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: left; vertical-align: middle;"></td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: left; vertical-align: middle;"></td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: left; vertical-align: middle;"></td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: left; vertical-align: middle;"></td>
+  </tr>`;
+      }).join('\n');
+
+      const grandSubTotal = totalSalaryAll + totalFixedAll;
+
+      const summaryRow = `
+  <tr>
+    <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; background-color: #B4C6E7; font-weight: bold; text-align: center; vertical-align: middle; height: 24px;" colspan="4">Sub-Total</td>
+    <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; background-color: #B4C6E7; font-weight: bold; text-align: right; vertical-align: middle;">${totalPagesAll.toLocaleString()}</td>
+    <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; background-color: #B4C6E7; font-weight: bold; text-align: right; vertical-align: middle;">${totalRegistersAll.toLocaleString()}</td>
+    <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; background-color: #B4C6E7; font-weight: bold; text-align: right; vertical-align: middle;">${totalMouzasAll.toLocaleString()}</td>
+    <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; background-color: #B4C6E7; font-weight: bold; text-align: right; vertical-align: middle;">${totalClicksAll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</td>
+    <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; background-color: #B4C6E7; font-weight: bold; text-align: right; vertical-align: middle;"></td>
+    <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; background-color: #B4C6E7; font-weight: bold; text-align: right; vertical-align: middle;">${totalSalaryAll.toLocaleString()}</td>
+    <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; background-color: #B4C6E7; font-weight: bold; text-align: right; vertical-align: middle;">${totalFixedAll.toLocaleString()}</td>
+    <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; background-color: #B4C6E7; font-weight: bold; text-align: right; vertical-align: middle;">${grandSubTotal.toLocaleString()}</td>
+    <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; background-color: #B4C6E7; font-weight: bold; text-align: center; vertical-align: middle;"></td>
+    <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; background-color: #B4C6E7; font-weight: bold; text-align: center; vertical-align: middle;"></td>
+    <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; background-color: #B4C6E7; font-weight: bold; text-align: center; vertical-align: middle;"></td>
+    <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; background-color: #B4C6E7; font-weight: bold; text-align: center; vertical-align: middle;"></td>
+  </tr>`;
+
+      let blankRows = '';
+      for (let i = 0; i < 15; i++) {
+        blankRows += `
+  <tr>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+    <td style="border: 1px solid #d9d9d9; height: 20px;"></td>
+  </tr>`;
+      }
+
+      const excelHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<!--[if gte mso 9]><xml>
+<x:ExcelWorkbook>
+<x:ExcelWorksheets>
+<x:ExcelWorksheet>
+<x:Name>Salary Sheet</x:Name>
+<x:WorksheetOptions>
+<x:DisplayGridlines/>
+</x:WorksheetOptions>
+</x:ExcelWorksheet>
+</x:ExcelWorksheets>
+</x:ExcelWorkbook>
+</xml><![endif]-->
+<style>
+  table { border-collapse: collapse; font-family: 'Calibri', 'Segoe UI', Arial, sans-serif; width: 100%; }
+  th, td { border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; }
+  .title-cell {
+    background-color: #B4C6E7;
+    font-size: 14px;
+    font-weight: bold;
+    text-align: center;
+    vertical-align: middle;
+    height: 38px;
+    border: 1px solid #000000;
+  }
+  .header-cell {
+    background-color: #D9D9D9;
+    font-weight: bold;
+    text-align: center;
+    vertical-align: middle;
+    font-size: 11px;
+    border: 1px solid #000000;
+    height: 28px;
+  }
+</style>
+</head>
+<body>
+<table>
+  <tr>
+    <td colspan="16" style="background-color: #B4C6E7; font-size: 14px; font-weight: bold; text-align: center; vertical-align: middle; height: 38px; border: 1px solid #000000;">District ${site?.name || 'Multan'} (Scanning Salary Sheet for the Month of ${monthLabel})</td>
+  </tr>
+  <tr>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">SR.NO#</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">Opertor</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">Shift</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">Operator Name</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">No of Pages Scanned</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">Registers</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">Mouza</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">Click</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">Rates per Click</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">Salary</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">fixed Salary Record Keep</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">Sub-Total</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">Account Title</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">Account Number</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">Bank</th>
+    <th style="background-color: #D9D9D9; font-weight: bold; text-align: center; vertical-align: middle; font-size: 11px; border: 1px solid #000000; height: 28px;">Bank Brach</th>
+  </tr>
+  ${rowsHtml}
+  ${summaryRow}
+  ${blankRows}
+</table>
+</body>
+</html>`;
+
+      const filename = `Salary_Sheet_${site?.name}_${monthLabel}.xls`;
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.type("application/vnd.ms-excel");
+      res.send(Buffer.from(excelHtml, "utf-8"));
+    } catch (err) {
+      console.error('[SALARY_EXPORT] Error:', err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.delete("/api/sites/:id", requireAuth, async (req: any, res) => {
     if (!checkSiteAccess(req.user, req.params.id, 'admin-sites')) {
       return res.status(403).json({ error: "Forbidden" });
