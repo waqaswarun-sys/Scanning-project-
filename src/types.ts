@@ -3,6 +3,7 @@ export interface Site {
   name: string;
   target_files: number;
   link?: string;
+  mouza_entry_link?: string;
   total_mouza_scanned?: number;
 }
 

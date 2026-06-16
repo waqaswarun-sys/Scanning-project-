@@ -171,6 +171,10 @@ export default function App() {
   const [newSiteDefaultEPValue, setNewSiteDefaultEPValue] = useState('');
   const [isUpdatingSiteLink, setIsUpdatingSiteLink] = useState<string | number | null>(null);
   const [newSiteLinkValue, setNewSiteLinkValue] = useState('');
+  const [newSiteMouzaEntryLink, setNewSiteMouzaEntryLink] = useState('');
+  const [updateMouzaEntryLinkValue, setUpdateMouzaEntryLinkValue] = useState('');
+  const [isUpdatingSiteMouzaEntryLink, setIsUpdatingSiteMouzaEntryLink] = useState<string | number | null>(null);
+  const [newSiteMouzaEntryLinkValue, setNewSiteMouzaEntryLinkValue] = useState('');
 
   // Past Extra Pages Editor States
   const [editPastSiteId, setEditPastSiteId] = useState<string>('');
@@ -467,6 +471,25 @@ export default function App() {
       if (res.ok) {
         setIsUpdatingSiteLink(null);
         setNewSiteLinkValue('');
+        fetchSites();
+        fetchSitesSummary();
+        fetchStats();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const updateSiteMouzaEntryLink = async (id: string | number, mouzaEntryLink: string) => {
+    try {
+      const res = await apiFetch(`/api/sites/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mouza_entry_link: mouzaEntryLink })
+      });
+      if (res.ok) {
+        setIsUpdatingSiteMouzaEntryLink(null);
+        setNewSiteMouzaEntryLinkValue('');
         fetchSites();
         fetchSitesSummary();
         fetchStats();
@@ -858,7 +881,8 @@ export default function App() {
           rate: parseFloat(newSiteRate) || 0.3,
           unit: newSiteUnit || 'Files',
           default_extra_pages: parseInt(newSiteDefaultExtraPages) || 0,
-          link: newSiteLink || ''
+          link: newSiteLink || '',
+          mouza_entry_link: newSiteMouzaEntryLink || ''
         })
       });
       if (res.ok) {
@@ -868,6 +892,7 @@ export default function App() {
         setNewSiteUnit('Files');
         setNewSiteDefaultExtraPages('0');
         setNewSiteLink('');
+        setNewSiteMouzaEntryLink('');
         fetchSites();
         fetchSitesSummary();
       }
@@ -942,6 +967,22 @@ export default function App() {
         body: JSON.stringify({ link: updateLinkValue })
       });
       setUpdateLinkValue('');
+      fetchStats();
+      fetchSites();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateMouzaEntryLink = async () => {
+    if (!selectedSiteId || !updateMouzaEntryLinkValue) return;
+    try {
+      await apiFetch(`/api/sites/${selectedSiteId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mouza_entry_link: updateMouzaEntryLinkValue })
+      });
+      setUpdateMouzaEntryLinkValue('');
       fetchStats();
       fetchSites();
     } catch (err) {
@@ -1675,9 +1716,9 @@ export default function App() {
                     >
                       {isSaving ? 'Saving...' : <><Save className="w-4 h-4" /> Save All Progress</>}
                     </button>
-                    {sites.find(s => s.id === selectedSiteId)?.link && (
+                    {sites.find(s => s.id === selectedSiteId)?.mouza_entry_link && (
                       <a 
-                        href={sites.find(s => s.id === selectedSiteId)?.link}
+                        href={sites.find(s => s.id === selectedSiteId)?.mouza_entry_link}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 h-[42px] rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-emerald-550/20 font-inherit"
@@ -2186,6 +2227,16 @@ export default function App() {
                               className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
                             />
                           </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-indigo-400 uppercase ml-1">Mouza Entry Link (Optional URL)</label>
+                            <input 
+                              type="text" 
+                              placeholder="e.g. https://mouza-entry-link.com"
+                              value={newSiteMouzaEntryLink}
+                              onChange={(e) => setNewSiteMouzaEntryLink(e.target.value)}
+                              className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                            />
+                          </div>
                           <button 
                             type="button"
                             onClick={handleAddSite}
@@ -2209,6 +2260,7 @@ export default function App() {
                                 <th className="text-right pb-3">Unit</th>
                                 <th className="text-right pb-3 text-indigo-500">Default EP</th>
                                 <th className="text-right pb-3 text-emerald-600">Site Link</th>
+                                <th className="text-right pb-3 text-teal-600">Mouza Entry Link</th>
                                 <th className="text-right pb-3 text-orange-600">Total EP</th>
                                 <th className="text-right pb-3">Total Scanned</th>
                                 <th className="text-right pb-3">Total Pages</th>
@@ -2413,6 +2465,60 @@ export default function App() {
                                       </div>
                                     )}
                                   </td>
+                                  {/* Mouza Entry Link inline configuration */}
+                                  <td className="py-2 text-right text-slate-500 text-xs text-nowrap">
+                                    {isUpdatingSiteMouzaEntryLink === site.id ? (
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        <input 
+                                          type="text" 
+                                          value={newSiteMouzaEntryLinkValue}
+                                          onChange={(e) => setNewSiteMouzaEntryLinkValue(e.target.value)}
+                                          placeholder="https://..."
+                                          className="w-28 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                                          autoFocus
+                                        />
+                                        <button 
+                                          type="button"
+                                          onClick={() => updateSiteMouzaEntryLink(site.id, newSiteMouzaEntryLinkValue)}
+                                          className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition font-inherit"
+                                          title="Save"
+                                        >
+                                          <Check className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button 
+                                          type="button"
+                                          onClick={() => setIsUpdatingSiteMouzaEntryLink(null)}
+                                          className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition font-inherit"
+                                          title="Cancel"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
+                                        <span className="truncate max-w-[120px]" title={site.mouza_entry_link || 'No Link'}>
+                                          {site.mouza_entry_link ? (
+                                            <a href={site.mouza_entry_link} target="_blank" rel="noopener noreferrer" className="text-teal-600 hover:underline text-xs font-semibold">
+                                              {site.mouza_entry_link.replace(/^https?:\/\//, '')}
+                                            </a>
+                                          ) : (
+                                            <span className="text-slate-350 italic">No Link</span>
+                                          )}
+                                        </span>
+                                        <button 
+                                          type="button"
+                                          onClick={() => {
+                                            setIsUpdatingSiteMouzaEntryLink(site.id);
+                                            setNewSiteMouzaEntryLinkValue(site.mouza_entry_link || '');
+                                          }}
+                                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                          title="Edit Mouza Entry Link"
+                                        >
+                                          <Edit className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </td>
                                   <td className="py-4 text-right font-mono text-orange-600">{site.extra_pages?.toLocaleString() || '0'}</td>
                                   <td className="py-4 text-right font-mono text-slate-600">{site.total_files?.toLocaleString() || '0'}</td>
                                   <td className="py-4 text-right font-mono text-slate-600">{site.total_pages?.toLocaleString() || '0'}</td>
@@ -2456,6 +2562,7 @@ export default function App() {
                                 <td className="py-4 text-right font-mono text-indigo-650">
                                   {sitesSummary.reduce((sum, s) => sum + (s.default_extra_pages || 0), 0).toLocaleString()}
                                 </td>
+                                <td className="py-4"></td>
                                 <td className="py-4"></td>
                                 <td className="py-4 text-right font-mono text-orange-700">
                                   {sitesSummary.reduce((sum, s) => sum + (s.extra_pages || 0), 0).toLocaleString()}
@@ -2890,6 +2997,26 @@ export default function App() {
                             className="w-full bg-teal-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-teal-700 transition-all font-inherit"
                           >
                             Update Link
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 pt-2 border-t border-blue-100/50">
+                        <label className="text-[10px] font-bold text-blue-600 uppercase">Mouza Entry Link (URL)</label>
+                        <div className="space-y-2">
+                          <input 
+                            type="text" 
+                            placeholder={sites.find(s => s.id === selectedSiteId)?.mouza_entry_link || 'No Mouza Entry link set yet'}
+                            value={updateMouzaEntryLinkValue}
+                            onChange={(e) => setUpdateMouzaEntryLinkValue(e.target.value)}
+                            className="w-full bg-white border border-blue-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500/20"
+                          />
+                          <button 
+                            type="button"
+                            onClick={handleUpdateMouzaEntryLink}
+                            className="w-full bg-emerald-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all font-inherit"
+                          >
+                            Update Mouza Entry Link
                           </button>
                         </div>
                       </div>
