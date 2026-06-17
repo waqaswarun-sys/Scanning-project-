@@ -2025,7 +2025,8 @@ async function startServer() {
       let totalSalaryAll = 0;
       let totalFixedAll = 0;
 
-      const rowsHtml = employees.map((e, index) => {
+      // Pre-calculate and filter out operators with 0 pages
+      const activeOperators = employees.map(e => {
         const eFiles = scanningData.filter(d => d.employee_id === e.id).reduce((sum, d) => sum + (d.files || 0), 0);
         let ePages = scanningData.filter(d => d.employee_id === e.id).reduce((sum, d) => sum + (d.pages || 0), 0);
         
@@ -2039,6 +2040,12 @@ async function startServer() {
           }
         });
 
+        return { employee: e, eFiles, ePages };
+      }).filter(item => item.ePages > 0);
+
+      const rowsHtml = activeOperators.map((item, index) => {
+        const { employee: e, eFiles, ePages } = item;
+        
         // Count unique mouzas
         const employeeDayData = scanningData.filter(d => d.employee_id === e.id);
         const mouzaNames = new Set<string>();
@@ -2057,8 +2064,9 @@ async function startServer() {
         const roleStr = isSupervisor ? 's.supervisor' : 'Scanning Operator';
         const shiftStr = ePages > 50000 ? 'Morning/Evening' : 'Morning';
         const clicks = ePages / 2;
-        const rate = e.rate_per_page || site?.rate || 0.35;
-        const salary = Math.round(clicks * rate);
+        const pageRate = e.rate_per_page || site?.rate || 0.175;
+        const clickRate = pageRate * 2;
+        const salary = Math.round(clicks * clickRate);
         const fixedSalary = isSupervisor ? 8000 : 0;
 
         // Add to totals
@@ -2079,7 +2087,7 @@ async function startServer() {
     <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;">${eFiles.toLocaleString()}</td>
     <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;">${mouzasCount}</td>
     <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;">${clicks.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</td>
-    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;">${rate.toFixed(2)}</td>
+    <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;">${clickRate.toFixed(2)}</td>
     <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle; font-weight: bold;">${salary.toLocaleString()}</td>
     <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;">${fixedSalary > 0 ? fixedSalary.toLocaleString() : ''}</td>
     <td style="border: 1px solid #7f7f7f; padding: 6px 10px; font-size: 11px; text-align: right; vertical-align: middle;"></td>
