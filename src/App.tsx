@@ -790,6 +790,26 @@ export default function App() {
     }
   };
 
+  const handlePrevDate = () => {
+    try {
+      const d = parseISO(adminDate);
+      const newDate = addDays(d, -1);
+      setAdminDate(format(newDate, 'yyyy-MM-dd'));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleNextDate = () => {
+    try {
+      const d = parseISO(adminDate);
+      const newDate = addDays(d, 1);
+      setAdminDate(format(newDate, 'yyyy-MM-dd'));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const downloadPDFReport = async () => {
     // Pages, registers/files, and mouzas count taken directly from stats overall (which corresponds to dashboard)
     let finalPages = stats?.overall?.total_pages || 0;
@@ -1739,19 +1759,53 @@ export default function App() {
                     <p className="text-xs text-slate-400 mt-1">Select date and operator to fill scanning progress and Mouzas</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
-                    <div className="relative h-[42px]">
-                      <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input 
-                        type="date" 
-                        value={adminDate}
-                        onChange={(e) => setAdminDate(e.target.value)}
-                        className="bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 h-full text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                      />
+                    <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-1 h-[42px]">
+                      <button 
+                        type="button"
+                        onClick={handlePrevDate}
+                        className="p-1.5 hover:bg-slate-200 text-slate-500 hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
+                        title="Previous Day"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
+                      <div className="relative h-full flex items-center px-2">
+                        <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                        <input 
+                          type="date" 
+                          value={adminDate}
+                          onChange={(e) => setAdminDate(e.target.value)}
+                          className="bg-transparent border-none pl-8 pr-1 py-1 h-full text-sm font-semibold text-slate-800 focus:outline-none w-[130px]"
+                        />
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={handleNextDate}
+                        className="p-1.5 hover:bg-slate-200 text-slate-500 hover:text-slate-900 rounded-lg transition-colors cursor-pointer"
+                        title="Next Day"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
                     </div>
+
+                    {/* Totals displaying next to the date */}
+                    <div className="flex items-center gap-3 px-3 py-1 bg-indigo-50/60 border border-indigo-100 rounded-xl h-[42px]">
+                      <div className="text-left leading-none">
+                        <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Today's Entry</span>
+                        <div className="flex items-center gap-4 mt-0.5">
+                          <span className="text-xs font-bold text-slate-700">
+                            Pages: <span className="text-indigo-600">{adminData.reduce((sum, item) => sum + (item.pages || 0), 0).toLocaleString()}</span>
+                          </span>
+                          <span className="text-xs font-bold text-slate-700">
+                            {(stats?.overall?.unit) || (sites.find(s => s.id === selectedSiteId) as any)?.unit || 'Files'}: <span className="text-indigo-600">{adminData.reduce((sum, item) => sum + (item.files || 0), 0).toLocaleString()}</span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
                     <button 
                       onClick={() => saveAdminData()}
                       disabled={isSaving}
-                      className="bg-indigo-600 text-white px-6 h-[42px] rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20"
+                      className="bg-indigo-600 text-white px-6 h-[42px] rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20 cursor-pointer"
                     >
                       {isSaving ? 'Saving...' : <><Save className="w-4 h-4" /> Save All Progress</>}
                     </button>
