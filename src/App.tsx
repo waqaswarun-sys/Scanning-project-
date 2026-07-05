@@ -165,6 +165,8 @@ export default function App() {
 
   const [isUpdatingRate, setIsUpdatingRate] = useState<string | number | null>(null);
   const [newRateValue, setNewRateValue] = useState('');
+  const [isEditingOperatorName, setIsEditingOperatorName] = useState<string | number | null>(null);
+  const [editingOperatorNameValue, setEditingOperatorNameValue] = useState<string>('');
   const [isUpdatingSiteRate, setIsUpdatingSiteRate] = useState<string | number | null>(null);
   const [newSiteRateValue, setNewSiteRateValue] = useState('');
   const [isUpdatingSiteUnit, setIsUpdatingSiteUnit] = useState<string | number | null>(null);
@@ -404,6 +406,24 @@ export default function App() {
       if (res.ok) {
         setIsUpdatingRate(null);
         setNewRateValue('');
+        fetchAdminData();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const updateOperatorName = async (id: string | number, name: string) => {
+    if (!name || name.trim().length < 2) return;
+    try {
+      const res = await apiFetch(`/api/employees/${id}/name`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() })
+      });
+      if (res.ok) {
+        setIsEditingOperatorName(null);
+        setEditingOperatorNameValue('');
         fetchAdminData();
       }
     } catch (err) {
@@ -846,6 +866,35 @@ export default function App() {
     return (longerLength - getLevenshteinDistance(longer, shorter)) / longerLength;
   };
 
+  const isParserMetadataLine = (l: string): boolean => {
+    const cleanLine = l.toLowerCase();
+    return (
+      cleanLine.includes('page') || 
+      cleanLine.includes('pagis') || 
+      cleanLine.includes('pege') || 
+      cleanLine.includes('paje') || 
+      cleanLine.includes('pge') ||
+      cleanLine.includes('paige') ||
+      cleanLine.includes('register') || 
+      cleanLine.includes('rigester') || 
+      cleanLine.includes('ragister') || 
+      cleanLine.includes('ragistar') || 
+      cleanLine.includes('regester') || 
+      cleanLine.includes('registar') || 
+      cleanLine.includes('rigister') ||
+      cleanLine.includes('ragistre') ||
+      cleanLine.includes('registre') ||
+      cleanLine.includes('volume') || 
+      cleanLine.includes('vol') ||
+      cleanLine.includes('file') || 
+      cleanLine.includes('mouza') || 
+      cleanLine.includes('mauza') || 
+      cleanLine.includes('moza') || 
+      cleanLine.includes('date') || 
+      /^\d+/.test(cleanLine)
+    );
+  };
+
   const getMatchScore = (operatorName: string, blockText: string): number => {
     const cleanText = blockText.toLowerCase();
     const cleanOp = operatorName.toLowerCase();
@@ -873,13 +922,7 @@ export default function App() {
 
       // Avoid matching lines that are obviously metadata
       if (
-        cleanedLine.includes('page') || 
-        cleanedLine.includes('register') || 
-        cleanedLine.includes('rigester') || 
-        cleanedLine.includes('volume') || 
-        cleanedLine.includes('mouza') || 
-        cleanedLine.includes('mauza') || 
-        cleanedLine.includes('date') || 
+        isParserMetadataLine(cleanedLine) ||
         cleanedLine.startsWith('[') || 
         cleanedLine.includes('pm') || 
         cleanedLine.includes('am')
@@ -959,16 +1002,7 @@ export default function App() {
     const isOperatorNameLine = (l: string) => {
       const cleanLine = l.trim().toLowerCase();
       if (!cleanLine) return false;
-      if (
-        cleanLine.includes('page') || 
-        cleanLine.includes('register') || 
-        cleanLine.includes('rigester') || 
-        cleanLine.includes('volume') || 
-        cleanLine.includes('mouza') || 
-        cleanLine.includes('mauza') || 
-        cleanLine.includes('date') || 
-        /^\d+/.test(cleanLine)
-      ) {
+      if (isParserMetadataLine(cleanLine)) {
         return false;
       }
 
@@ -1046,9 +1080,9 @@ export default function App() {
         }
       });
 
-      // 3. Extract registers/files and pages
-      const regRegex = /(?:registers?|rigesters?|volumes?|vols?|regs?|files?)\s*[:\-\s=]*\s*(\d[\d,]*)/i;
-      const pageRegex = /(?:pages?)\s*[:\-\s=]*\s*(\d[\d,]*)/i;
+      // 3. Extract registers/files and pages supporting multiple spelling variations (e.g. ragistar, peges)
+      const regRegex = /(?:register|rigester|ragistar|ragister|regester|registar|rigister|ragistre|registre|volume|vol|reg|file)s?\s*[:\-\s=]*\s*(\d[\d,]*)/i;
+      const pageRegex = /(?:page|pagis|pege|paje|pge|paige|pag)s?\s*[:\-\s=]*\s*(\d[\d,]*)/i;
 
       const extractNum = (text: string, regex: RegExp): number | null => {
         const match = text.match(regex);
@@ -3555,52 +3589,92 @@ export default function App() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                       {adminData.filter(op => op.is_active).map(operator => (
                         <div key={operator.employee_id} className="flex flex-col p-3 border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors gap-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium text-slate-700">{operator.name}</span>
-                            <div className="flex items-center gap-1">
-                              {confirmDeleteEmployeeId === operator.employee_id ? (
-                                <div className="flex gap-1">
-                                  <button 
-                                    type="button"
-                                    onClick={() => handleDeleteEmployee(operator.employee_id)}
-                                    className="p-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all font-inherit"
-                                    title="Confirm Deactivate"
-                                  >
-                                    <Save className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button 
-                                    type="button"
-                                    onClick={() => setConfirmDeleteEmployeeId(null)}
-                                    className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 transition-all font-inherit"
-                                    title="Cancel"
-                                  >
-                                    <ChevronLeft className="w-3.5 h-3.5" />
-                                  </button>
+                          <div className="flex items-center justify-between min-h-[36px]">
+                            {isEditingOperatorName === operator.employee_id ? (
+                              <div className="flex items-center gap-2 w-full mr-1">
+                                <input 
+                                  type="text" 
+                                  value={editingOperatorNameValue}
+                                  onChange={(e) => setEditingOperatorNameValue(e.target.value)}
+                                  className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-indigo-500"
+                                  placeholder="Operator Name"
+                                  autoFocus
+                                />
+                                <button 
+                                  type="button"
+                                  onClick={() => updateOperatorName(operator.employee_id, editingOperatorNameValue)}
+                                  className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-inherit"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button 
+                                  type="button"
+                                  onClick={() => {
+                                    setIsEditingOperatorName(null);
+                                    setEditingOperatorNameValue('');
+                                  }}
+                                  className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 font-inherit"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-1.5 group cursor-pointer" onClick={() => {
+                                  setIsEditingOperatorName(operator.employee_id);
+                                  setEditingOperatorNameValue(operator.name);
+                                }}>
+                                  <span className="text-sm font-semibold text-slate-700 hover:text-indigo-600 transition-colors flex items-center gap-1.5">
+                                    {operator.name}
+                                    <Edit className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                  </span>
                                 </div>
-                              ) : (
-                                <>
-                                  <button 
-                                    type="button"
-                                    onClick={() => {
-                                      setIsUpdatingRate(operator.employee_id);
-                                      setNewRateValue((operator as any).rate_per_page?.toString() || '0.30');
-                                    }}
-                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                                    title="Set Rate"
-                                  >
-                                    <TrendingUp className="w-4 h-4" />
-                                  </button>
-                                  <button 
-                                    type="button"
-                                    onClick={() => setConfirmDeleteEmployeeId(operator.employee_id)}
-                                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                                    title="Remove Operator"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
+                                <div className="flex items-center gap-1">
+                                  {confirmDeleteEmployeeId === operator.employee_id ? (
+                                    <div className="flex gap-1">
+                                      <button 
+                                        type="button"
+                                        onClick={() => handleDeleteEmployee(operator.employee_id)}
+                                        className="p-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all font-inherit"
+                                        title="Confirm Deactivate"
+                                      >
+                                        <Save className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button 
+                                        type="button"
+                                        onClick={() => setConfirmDeleteEmployeeId(null)}
+                                        className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 transition-all font-inherit"
+                                        title="Cancel"
+                                      >
+                                        <ChevronLeft className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          setIsUpdatingRate(operator.employee_id);
+                                          setNewRateValue((operator as any).rate_per_page?.toString() || '0.30');
+                                        }}
+                                        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                        title="Set Rate"
+                                      >
+                                        <TrendingUp className="w-4 h-4" />
+                                      </button>
+                                      <button 
+                                        type="button"
+                                        onClick={() => setConfirmDeleteEmployeeId(operator.employee_id)}
+                                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                        title="Remove Operator"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </>
+                            )}
                           </div>
                           
                           {isUpdatingRate === operator.employee_id && (

@@ -2591,6 +2591,33 @@ async function startServer() {
     }
   });
 
+  app.patch("/api/employees/:id/name", requireAuth, async (req: any, res) => {
+    const { name } = req.body;
+    if (!name || typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 50) {
+      return res.status(400).json({ error: "Operator name must be between 2 and 50 characters" });
+    }
+    try {
+      const employeeRef = db.collection('employees').doc(req.params.id);
+      const employeeDoc = await employeeRef.get();
+      
+      if (!employeeDoc.exists) return res.status(404).json({ error: "Employee not found" });
+      const employee = employeeDoc.data();
+
+      if (!checkSiteAccess(req.user, employee?.site_id, 'admin-operators')) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      await employeeRef.update({
+        name: name.trim(),
+        updated_at: FieldValue.serverTimestamp()
+      });
+      res.json({ success: true, name: name.trim() });
+    } catch (err) {
+      console.error('[EMPLOYEE-NAME] Error:', err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Apps Management Routes
   app.get("/api/apps", async (req: any, res) => {
     try {
