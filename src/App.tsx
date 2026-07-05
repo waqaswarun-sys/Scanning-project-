@@ -1081,8 +1081,8 @@ export default function App() {
       });
 
       // 3. Extract registers/files and pages supporting multiple spelling variations (e.g. ragistar, peges)
-      const regRegex = /(?:register|rigester|ragistar|ragister|regester|registar|rigister|ragistre|registre|volume|vol|reg|file)s?\s*[:\-\s=]*\s*(\d[\d,]*)/i;
-      const pageRegex = /(?:page|pagis|pege|paje|pge|paige|pag)s?\s*[:\-\s=]*\s*(\d[\d,]*)/i;
+      const regRegex = /(?:register|rigester|ragistar|ragister|regester|registar|rigister|ragistre|registre|volume|vol|reg|file)s?\s*[:\-\s=_]*\s*(\d[\d,]*)/i;
+      const pageRegex = /(?:page|pagis|pege|paje|pge|paige|pag)s?\s*[:\-\s=_]*\s*(\d[\d,]*)/i;
 
       const extractNum = (text: string, regex: RegExp): number | null => {
         const match = text.match(regex);
