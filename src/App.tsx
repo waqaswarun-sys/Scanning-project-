@@ -28,7 +28,8 @@ import {
   Map,
   Search,
   RotateCcw,
-  Sliders
+  Sliders,
+  Sparkles
 } from 'lucide-react';
 import UserControlsPage from './components/UserControlsPage';
 import AppsPage from './components/AppsPage';
@@ -190,6 +191,11 @@ export default function App() {
   // Wizard Data Entry State
   const [selectedOperatorIndex, setSelectedOperatorIndex] = useState<number>(0);
   const [showCompletionMessage, setShowCompletionMessage] = useState<boolean>(false);
+  
+  // WhatsApp Report Parser States
+  const [showParser, setShowParser] = useState<boolean>(false);
+  const [parserText, setParserText] = useState<string>('');
+  const [parserFeedback, setParserFeedback] = useState<Array<{ type: 'success' | 'warning' | 'info'; message: string }>>([]);
 
   const apiFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const token = localStorage.getItem('authToken');
@@ -808,6 +814,299 @@ export default function App() {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const getLevenshteinDistance = (a: string, b: string): number => {
+    const tmp: number[][] = [];
+    for (let i = 0; i <= a.length; i++) {
+      tmp[i] = [i];
+    }
+    for (let j = 0; j <= b.length; j++) {
+      tmp[0][j] = j;
+    }
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        tmp[i][j] = Math.min(
+          tmp[i - 1][j] + 1, // deletion
+          tmp[i][j - 1] + 1, // insertion
+          tmp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1) // substitution
+        );
+      }
+    }
+    return tmp[a.length][b.length];
+  };
+
+  const getStringSimilarity = (s1: string, s2: string): number => {
+    const longer = s1.length > s2.length ? s1 : s2;
+    const shorter = s1.length > s2.length ? s2 : s1;
+    const longerLength = longer.length;
+    if (longerLength === 0) {
+      return 1.0;
+    }
+    return (longerLength - getLevenshteinDistance(longer, shorter)) / longerLength;
+  };
+
+  const getMatchScore = (operatorName: string, blockText: string): number => {
+    const cleanText = blockText.toLowerCase();
+    const cleanOp = operatorName.toLowerCase();
+    
+    // 1. Perfect exact match of full name
+    if (cleanText.includes(cleanOp)) {
+      return 100;
+    }
+    
+    // 2. Reversed name check (for names like "Younis Malik" vs "Malik Younis")
+    const opParts = cleanOp.split(/\s+/).filter(p => p.length > 0);
+    const reversedOp = [...opParts].reverse().join(' ');
+    if (cleanText.includes(reversedOp)) {
+      return 95;
+    }
+    
+    // 3. Fuzzy matching on lines
+    const lines = blockText.split('\n').map(l => l.trim().toLowerCase()).filter(Boolean);
+    let maxFuzzyScore = 0;
+    
+    for (const line of lines) {
+      // Clean leading/trailing symbols or common message characters if any
+      const cleanedLine = line.replace(/^[•\-*\s]+|[•\-*\s]+$/g, '').trim();
+      if (!cleanedLine) continue;
+
+      // Avoid matching lines that are obviously metadata
+      if (
+        cleanedLine.includes('page') || 
+        cleanedLine.includes('register') || 
+        cleanedLine.includes('rigester') || 
+        cleanedLine.includes('volume') || 
+        cleanedLine.includes('mouza') || 
+        cleanedLine.includes('mauza') || 
+        cleanedLine.includes('date') || 
+        cleanedLine.startsWith('[') || 
+        cleanedLine.includes('pm') || 
+        cleanedLine.includes('am')
+      ) {
+        continue;
+      }
+      
+      // Calculate similarity to full name
+      const simDirect = getStringSimilarity(cleanOp, cleanedLine);
+      // Calculate similarity to reversed name
+      const simReversed = getStringSimilarity(reversedOp, cleanedLine);
+      
+      const bestSim = Math.max(simDirect, simReversed);
+      
+      // Support matching individual parts of the name (e.g. "Saboor" matching "Abdul Saboor" line)
+      let bestPartSim = 0;
+      if (opParts.length > 1) {
+        const lineWords = cleanedLine.split(/\s+/).filter(w => w.length > 0);
+        for (const opPart of opParts) {
+          if (opPart.length > 2) {
+            for (const lineWord of lineWords) {
+              if (lineWord.length > 2) {
+                const partSim = getStringSimilarity(opPart, lineWord);
+                if (partSim > bestPartSim) {
+                  bestPartSim = partSim;
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      // Convert similarity to a 0-100 scale
+      // Give a slight penalty to part-only matches to prefer full matches
+      const score = Math.max(bestSim * 100, bestPartSim * 80);
+      if (score > maxFuzzyScore) {
+        maxFuzzyScore = score;
+      }
+    }
+    
+    // 4. Token-based fallback match
+    let matchedTokens = 0;
+    let totalTokens = opParts.length;
+    
+    for (const part of opParts) {
+      if (part.length <= 1) {
+        if (cleanText.includes(' ' + part + ' ') || cleanText.startsWith(part + ' ') || cleanText.endsWith(' ' + part)) {
+          matchedTokens++;
+        }
+      } else if (cleanText.includes(part)) {
+        matchedTokens++;
+      }
+    }
+    
+    let tokenScore = 0;
+    if (matchedTokens > 0 && totalTokens > 0) {
+      tokenScore = Math.round((matchedTokens / totalTokens) * 80);
+    }
+    
+    return Math.max(maxFuzzyScore, tokenScore);
+  };
+
+  const handleAutoParse = () => {
+    if (!parserText.trim()) {
+      setParserFeedback([{ type: 'warning', message: 'Please paste some text first.' }]);
+      return;
+    }
+
+    const lines = parserText.split(/\r?\n/);
+    const blocks: string[][] = [];
+    let currentBlock: string[] = [];
+
+    // Check if line starts with a WhatsApp timestamp
+    const isWhatsAppHeader = (l: string) => /^\[\d{1,2}:\d{2}\s*(?:AM|PM)?,?\s*\d{1,2}\/\d{1,2}\/\d{2,4}\]/i.test(l.trim());
+
+    // Helper to identify if line contains an operator name exactly or partially
+    const isOperatorNameLine = (l: string) => {
+      const cleanLine = l.trim().toLowerCase();
+      if (!cleanLine) return false;
+      if (
+        cleanLine.includes('page') || 
+        cleanLine.includes('register') || 
+        cleanLine.includes('rigester') || 
+        cleanLine.includes('volume') || 
+        cleanLine.includes('mouza') || 
+        cleanLine.includes('mauza') || 
+        cleanLine.includes('date') || 
+        /^\d+/.test(cleanLine)
+      ) {
+        return false;
+      }
+
+      return adminData.some(op => {
+        const opName = op.name.toLowerCase();
+        if (cleanLine.includes(opName)) return true;
+        const parts = opName.split(/\s+/).filter(p => p.length > 0);
+        const reversed = [...parts].reverse().join(' ');
+        if (cleanLine.includes(reversed)) return true;
+        if (parts.length >= 2 && parts.every(p => cleanLine.includes(p))) {
+          return true;
+        }
+        return false;
+      });
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) {
+        if (currentBlock.length > 0) {
+          blocks.push(currentBlock);
+          currentBlock = [];
+        }
+        continue;
+      }
+
+      const isHeader = isWhatsAppHeader(line);
+      const isNewOp = isOperatorNameLine(line);
+
+      if (isHeader || isNewOp) {
+        if (currentBlock.length > 0) {
+          blocks.push(currentBlock);
+          currentBlock = [];
+        }
+      }
+
+      currentBlock.push(line);
+    }
+    if (currentBlock.length > 0) {
+      blocks.push(currentBlock);
+    }
+
+    const feedback: Array<{ type: 'success' | 'warning' | 'info'; message: string }> = [];
+    let updatedCount = 0;
+    
+    // Create a copy of the current adminData to apply updates
+    let newAdminData = [...adminData];
+
+    blocks.forEach((blockLines) => {
+      // 1. Clean WhatsApp timestamp and sender name from the block text
+      const processedLines = blockLines.map((line, idx) => {
+        let l = line.trim();
+        const timestampRegex = /^\[\d{1,2}:\d{2}\s*(?:AM|PM)?,?\s*\d{1,2}\/\d{1,2}\/\d{2,4}\]\s*/i;
+        if (idx === 0 && timestampRegex.test(l)) {
+          l = l.replace(timestampRegex, '');
+          const colonIndex = l.indexOf(':');
+          if (colonIndex !== -1) {
+            l = l.substring(colonIndex + 1).trim();
+          }
+        }
+        return l;
+      });
+
+      const cleanedBlockText = processedLines.join('\n');
+      
+      // 2. Score operators to find the best match
+      let bestOperator: any = null;
+      let bestScore = 0;
+
+      adminData.forEach(op => {
+        const score = getMatchScore(op.name, cleanedBlockText);
+        if (score > bestScore) {
+          bestScore = score;
+          bestOperator = op;
+        }
+      });
+
+      // 3. Extract registers/files and pages
+      const regRegex = /(?:registers?|rigesters?|volumes?|vols?|regs?|files?)\s*[:\-\s=]*\s*(\d[\d,]*)/i;
+      const pageRegex = /(?:pages?)\s*[:\-\s=]*\s*(\d[\d,]*)/i;
+
+      const extractNum = (text: string, regex: RegExp): number | null => {
+        const match = text.match(regex);
+        if (match && match[1]) {
+          const cleanNum = match[1].replace(/,/g, '');
+          const parsed = parseInt(cleanNum, 10);
+          return isNaN(parsed) ? null : parsed;
+        }
+        return null;
+      };
+
+      const extractedFiles = extractNum(cleanedBlockText, regRegex);
+      const extractedPages = extractNum(cleanedBlockText, pageRegex);
+
+      if (bestOperator && bestScore >= 40) {
+        // Update this operator in our copied data
+        newAdminData = newAdminData.map(item => {
+          if (item.employee_id === bestOperator.employee_id) {
+            return {
+              ...item,
+              files: extractedFiles !== null ? extractedFiles : item.files,
+              pages: extractedPages !== null ? extractedPages : item.pages
+            };
+          }
+          return item;
+        });
+
+        updatedCount++;
+        
+        let fileLabel = (stats?.overall?.unit) || (sites.find(s => s.id === selectedSiteId) as any)?.unit || 'Files';
+        feedback.push({
+          type: 'success',
+          message: `Matched "${bestOperator.name}" (${bestScore}% Confidence) -> ${extractedFiles !== null ? `${extractedFiles} ${fileLabel}` : `no ${fileLabel}`}, ${extractedPages !== null ? `${extractedPages} Pages` : 'no Pages'}.`
+        });
+      } else {
+        // Extract a candidate name from the first line for display
+        const firstLine = processedLines[0] || 'Unknown';
+        feedback.push({
+          type: 'warning',
+          message: `Could not match operator report starting with "${firstLine.substring(0, 30)}..."`
+        });
+      }
+    });
+
+    if (updatedCount > 0) {
+      setAdminData(newAdminData);
+      feedback.unshift({
+        type: 'info',
+        message: `Successfully parsed and filled data for ${updatedCount} operator(s)! Please review the form below and click "Save All Progress" to save.`
+      });
+    } else {
+      feedback.unshift({
+        type: 'warning',
+        message: 'Could not match any reports. Please check that operator names in your pasted text match active operator names.'
+      });
+    }
+
+    setParserFeedback(feedback);
   };
 
   const downloadPDFReport = async () => {
@@ -1832,6 +2131,94 @@ export default function App() {
                     {saveMessage.text}
                   </div>
                 )}
+
+                {/* WhatsApp Report Auto-Parser */}
+                <div className="mb-6 bg-slate-50 border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowParser(!showParser)}
+                      className="flex items-center gap-2 text-sm font-bold text-slate-800 hover:text-indigo-600 transition-colors cursor-pointer text-left focus:outline-none"
+                    >
+                      <Sparkles className="w-4.5 h-4.5 text-indigo-500 animate-pulse shrink-0" />
+                      <span>{showParser ? "Hide WhatsApp Auto-Parser" : "✨ Paste WhatsApp Report (Auto Fill)"}</span>
+                      <span className="text-[9px] bg-indigo-100 text-indigo-700 font-extrabold px-2 py-0.5 rounded-full uppercase shrink-0">
+                        New
+                      </span>
+                    </button>
+                    {showParser && parserText && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setParserText('');
+                          setParserFeedback([]);
+                        }}
+                        className="text-xs text-slate-500 hover:text-red-500 font-bold transition-colors cursor-pointer focus:outline-none"
+                      >
+                        Clear Text
+                      </button>
+                    )}
+                  </div>
+
+                  {showParser ? (
+                    <div className="space-y-4">
+                      <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                        Paste the copied WhatsApp text from your operators in the text area below. The system will automatically detect the operators by matching their names, count their scanned registers (volumes/files) and pages, and fill the form below.
+                      </p>
+                      
+                      <div className="relative">
+                        <textarea
+                          rows={6}
+                          value={parserText}
+                          onChange={(e) => setParserText(e.target.value)}
+                          placeholder="Paste WhatsApp text here... e.g.&#10;Abdul Saboor&#10;04-07-2026&#10;Volume:6&#10;Pages 2078&#10;&#10;Qudsia&#10;Date: 04-07-2026&#10;Total Register: 19&#10;Total Pages: 7039"
+                          className="w-full bg-white border border-slate-200 rounded-xl p-4 text-xs font-semibold font-sans focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-inner min-h-[140px]"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={handleAutoParse}
+                          className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 cursor-pointer focus:outline-none"
+                        >
+                          <Sparkles className="w-4 h-4" />
+                          Auto Parse & Fill Form
+                        </button>
+                      </div>
+
+                      {parserFeedback.length > 0 && (
+                        <div className="mt-4 bg-white border border-slate-200/50 rounded-xl p-4 max-h-[220px] overflow-y-auto space-y-2 shadow-inner">
+                          <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Parsing Results</h5>
+                          <div className="space-y-1.5">
+                            {parserFeedback.map((fb, i) => (
+                              <div
+                                key={i}
+                                className={cn(
+                                  "text-xs p-2.5 rounded-lg flex items-start gap-2 font-medium border leading-relaxed",
+                                  fb.type === 'success' && "bg-emerald-50/60 text-emerald-800 border-emerald-100",
+                                  fb.type === 'warning' && "bg-amber-50/60 text-amber-800 border-amber-100",
+                                  fb.type === 'info' && "bg-indigo-50/60 text-indigo-800 border-indigo-100"
+                                )}
+                              >
+                                <span className="mt-0.5 text-sm shrink-0">
+                                  {fb.type === 'success' && "✅"}
+                                  {fb.type === 'warning' && "⚠️"}
+                                  {fb.type === 'info' && "💡"}
+                                </span>
+                                <span>{fb.message}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 font-medium">
+                      Have a WhatsApp group chat with daily operator counts? Click to expand and paste the entire block to auto-fill the whole page in 1-second!
+                    </p>
+                  )}
+                </div>
 
                 {showCompletionMessage ? (
                   <motion.div 
