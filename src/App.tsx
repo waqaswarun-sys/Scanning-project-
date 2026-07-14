@@ -895,6 +895,62 @@ export default function App() {
     );
   };
 
+  const parseTabularLine = (line: string): { name: string; files: number | null; pages: number | null } | null => {
+    const parts = line.split(/\t+|\s{2,}/).map(p => p.trim()).filter(Boolean);
+    if (parts.length < 3) return null;
+
+    const isDateOrTime = (str: string) => {
+      const clean = str.toLowerCase();
+      if (/^\d{1,4}[/\-]\d{1,4}[/\-]\d{2,4}$/.test(clean)) return true;
+      if (/^\d{1,2}:\d{2}(:\d{2})?(\s*(am|pm))?$/i.test(clean)) return true;
+      if (/^\d{1,4}[/\-]\d{1,4}[/\-]\d{2,4}\s+\d{1,2}:\d{2}(:\d{2})?(\s*(am|pm))?$/i.test(clean)) return true;
+      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+      const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december', 'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      if (days.some(d => clean === d || clean.startsWith(d + ',')) || months.some(m => clean === m || clean.startsWith(m + ' '))) return true;
+      return false;
+    };
+
+    const isNumeric = (str: string) => {
+      return /^\d[\d,]*$/.test(str);
+    };
+
+    const filteredParts = parts.filter(p => !isDateOrTime(p));
+    if (filteredParts.length < 2) return null;
+
+    const numericCandidates: number[] = [];
+    const nameCandidates: string[] = [];
+
+    filteredParts.forEach(part => {
+      if (isNumeric(part)) {
+        const val = parseInt(part.replace(/,/g, ''), 10);
+        if (!isNaN(val)) {
+          numericCandidates.push(val);
+        }
+      } else {
+        if (/[a-zA-Z\u0600-\u06FF]/.test(part)) {
+          nameCandidates.push(part);
+        }
+      }
+    });
+
+    if (nameCandidates.length > 0 && numericCandidates.length > 0) {
+      const name = nameCandidates[0];
+      let files: number | null = null;
+      let pages: number | null = null;
+
+      if (numericCandidates.length >= 2) {
+        files = numericCandidates[0];
+        pages = numericCandidates[1];
+      } else if (numericCandidates.length === 1) {
+        pages = numericCandidates[0];
+      }
+
+      return { name, files, pages };
+    }
+
+    return null;
+  };
+
   const getMatchScore = (operatorName: string, blockText: string): number => {
     const cleanText = blockText.toLowerCase();
     const cleanOp = operatorName.toLowerCase();
@@ -992,7 +1048,7 @@ export default function App() {
     }
 
     const lines = parserText.split(/\r?\n/);
-    const blocks: string[][] = [];
+    const blocks: Array<{ type: 'freeform' | 'tabular'; lines: string[]; tabularData?: { name: string; files: number | null; pages: number | null } }> = [];
     let currentBlock: string[] = [];
 
     // Check if line starts with a WhatsApp timestamp
@@ -1023,9 +1079,19 @@ export default function App() {
       const line = lines[i].trim();
       if (!line) {
         if (currentBlock.length > 0) {
-          blocks.push(currentBlock);
+          blocks.push({ type: 'freeform', lines: currentBlock });
           currentBlock = [];
         }
+        continue;
+      }
+
+      const tabularData = parseTabularLine(line);
+      if (tabularData) {
+        if (currentBlock.length > 0) {
+          blocks.push({ type: 'freeform', lines: currentBlock });
+          currentBlock = [];
+        }
+        blocks.push({ type: 'tabular', lines: [line], tabularData });
         continue;
       }
 
@@ -1034,7 +1100,7 @@ export default function App() {
 
       if (isHeader || isNewOp) {
         if (currentBlock.length > 0) {
-          blocks.push(currentBlock);
+          blocks.push({ type: 'freeform', lines: currentBlock });
           currentBlock = [];
         }
       }
@@ -1042,7 +1108,7 @@ export default function App() {
       currentBlock.push(line);
     }
     if (currentBlock.length > 0) {
-      blocks.push(currentBlock);
+      blocks.push({ type: 'freeform', lines: currentBlock });
     }
 
     const feedback: Array<{ type: 'success' | 'warning' | 'info'; message: string }> = [];
@@ -1051,79 +1117,122 @@ export default function App() {
     // Create a copy of the current adminData to apply updates
     let newAdminData = [...adminData];
 
-    blocks.forEach((blockLines) => {
-      // 1. Clean WhatsApp timestamp and sender name from the block text
-      const processedLines = blockLines.map((line, idx) => {
-        let l = line.trim();
-        const timestampRegex = /^\[\d{1,2}:\d{2}\s*(?:AM|PM)?,?\s*\d{1,2}\/\d{1,2}\/\d{2,4}\]\s*/i;
-        if (idx === 0 && timestampRegex.test(l)) {
-          l = l.replace(timestampRegex, '');
-          const colonIndex = l.indexOf(':');
-          if (colonIndex !== -1) {
-            l = l.substring(colonIndex + 1).trim();
-          }
-        }
-        return l;
-      });
-
-      const cleanedBlockText = processedLines.join('\n');
-      
-      // 2. Score operators to find the best match
-      let bestOperator: any = null;
-      let bestScore = 0;
-
-      adminData.forEach(op => {
-        const score = getMatchScore(op.name, cleanedBlockText);
-        if (score > bestScore) {
-          bestScore = score;
-          bestOperator = op;
-        }
-      });
-
-      // 3. Extract registers/files and pages supporting multiple spelling variations (e.g. ragistar, peges)
-      const regRegex = /(?:register|rigester|ragistar|ragister|regester|registar|rigister|ragistre|registre|volume|vol|reg|file)s?\s*[:\-\s=_]*\s*(\d[\d,]*)/i;
-      const pageRegex = /(?:page|pagis|pege|paje|pge|paige|pag)s?\s*[:\-\s=_]*\s*(\d[\d,]*)/i;
-
-      const extractNum = (text: string, regex: RegExp): number | null => {
-        const match = text.match(regex);
-        if (match && match[1]) {
-          const cleanNum = match[1].replace(/,/g, '');
-          const parsed = parseInt(cleanNum, 10);
-          return isNaN(parsed) ? null : parsed;
-        }
-        return null;
-      };
-
-      const extractedFiles = extractNum(cleanedBlockText, regRegex);
-      const extractedPages = extractNum(cleanedBlockText, pageRegex);
-
-      if (bestOperator && bestScore >= 40) {
-        // Update this operator in our copied data
-        newAdminData = newAdminData.map(item => {
-          if (item.employee_id === bestOperator.employee_id) {
-            return {
-              ...item,
-              files: extractedFiles !== null ? extractedFiles : item.files,
-              pages: extractedPages !== null ? extractedPages : item.pages
-            };
-          }
-          return item;
-        });
-
-        updatedCount++;
+    blocks.forEach((block) => {
+      if (block.type === 'tabular' && block.tabularData) {
+        const { name, files, pages } = block.tabularData;
         
-        let fileLabel = (stats?.overall?.unit) || (sites.find(s => s.id === selectedSiteId) as any)?.unit || 'Files';
-        feedback.push({
-          type: 'success',
-          message: `Matched "${bestOperator.name}" (${bestScore}% Confidence) -> ${extractedFiles !== null ? `${extractedFiles} ${fileLabel}` : `no ${fileLabel}`}, ${extractedPages !== null ? `${extractedPages} Pages` : 'no Pages'}.`
+        // Match the operator
+        let bestOperator: any = null;
+        let bestScore = 0;
+
+        adminData.forEach(op => {
+          const score = getMatchScore(op.name, name);
+          if (score > bestScore) {
+            bestScore = score;
+            bestOperator = op;
+          }
         });
+
+        if (bestOperator && bestScore >= 40) {
+          // Update this operator in our copied data
+          newAdminData = newAdminData.map(item => {
+            if (item.employee_id === bestOperator.employee_id) {
+              return {
+                ...item,
+                files: files !== null ? files : item.files,
+                pages: pages !== null ? pages : item.pages
+              };
+            }
+            return item;
+          });
+
+          updatedCount++;
+          let fileLabel = (stats?.overall?.unit) || (sites.find(s => s.id === selectedSiteId) as any)?.unit || 'Files';
+          feedback.push({
+            type: 'success',
+            message: `Matched "${bestOperator.name}" (${bestScore}% Confidence) from table row -> ${files !== null ? `${files} ${fileLabel}` : `no ${fileLabel}`}, ${pages !== null ? `${pages} Pages` : 'no Pages'}.`
+          });
+        } else {
+          feedback.push({
+            type: 'warning',
+            message: `Could not match operator report starting with "${name.substring(0, 30)}..."`
+          });
+        }
       } else {
-        // Extract a candidate name from the first line for display
-        const firstLine = processedLines[0] || 'Unknown';
-        feedback.push({
-          type: 'warning',
-          message: `Could not match operator report starting with "${firstLine.substring(0, 30)}..."`
+        const blockLines = block.lines;
+        // 1. Clean WhatsApp timestamp and sender name from the block text
+        const processedLines = blockLines.map((line, idx) => {
+          let l = line.trim();
+          const timestampRegex = /^\[\d{1,2}:\d{2}\s*(?:AM|PM)?,?\s*\d{1,2}\/\d{1,2}\/\d{2,4}\]\s*/i;
+          if (idx === 0 && timestampRegex.test(l)) {
+            l = l.replace(timestampRegex, '');
+            const colonIndex = l.indexOf(':');
+            if (colonIndex !== -1) {
+              l = l.substring(colonIndex + 1).trim();
+            }
+          }
+          return l;
         });
+
+        const cleanedBlockText = processedLines.join('\n');
+        
+        // 2. Score operators to find the best match
+        let bestOperator: any = null;
+        let bestScore = 0;
+
+        adminData.forEach(op => {
+          const score = getMatchScore(op.name, cleanedBlockText);
+          if (score > bestScore) {
+            bestScore = score;
+            bestOperator = op;
+          }
+        });
+
+        // 3. Extract registers/files and pages supporting multiple spelling variations (e.g. ragistar, peges)
+        const regRegex = /(?:register|rigester|ragistar|ragister|regester|registar|rigister|ragistre|registre|volume|vol|reg|file)s?\s*[:\-\s=_]*\s*(\d[\d,]*)/i;
+        const pageRegex = /(?:page|pagis|pege|paje|pge|paige|pag)s?\s*[:\-\s=_]*\s*(\d[\d,]*)/i;
+
+        const extractNum = (text: string, regex: RegExp): number | null => {
+          const match = text.match(regex);
+          if (match && match[1]) {
+            const cleanNum = match[1].replace(/,/g, '');
+            const parsed = parseInt(cleanNum, 10);
+            return isNaN(parsed) ? null : parsed;
+          }
+          return null;
+        };
+
+        const extractedFiles = extractNum(cleanedBlockText, regRegex);
+        const extractedPages = extractNum(cleanedBlockText, pageRegex);
+
+        if (bestOperator && bestScore >= 40) {
+          // Update this operator in our copied data
+          newAdminData = newAdminData.map(item => {
+            if (item.employee_id === bestOperator.employee_id) {
+              return {
+                ...item,
+                files: extractedFiles !== null ? extractedFiles : item.files,
+                pages: extractedPages !== null ? extractedPages : item.pages
+              };
+            }
+            return item;
+          });
+
+          updatedCount++;
+          
+          let fileLabel = (stats?.overall?.unit) || (sites.find(s => s.id === selectedSiteId) as any)?.unit || 'Files';
+          feedback.push({
+            type: 'success',
+            message: `Matched "${bestOperator.name}" (${bestScore}% Confidence) -> ${extractedFiles !== null ? `${extractedFiles} ${fileLabel}` : `no ${fileLabel}`}, ${extractedPages !== null ? `${extractedPages} Pages` : 'no Pages'}.`
+          });
+        } else {
+          // Extract a candidate name from the first line for display
+          const firstLine = processedLines[0] || 'Unknown';
+          feedback.push({
+            type: 'warning',
+            message: `Could not match operator report starting with "${firstLine.substring(0, 30)}..."`
+          });
+        }
       }
     });
 
