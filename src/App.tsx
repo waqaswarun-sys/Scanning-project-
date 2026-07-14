@@ -29,7 +29,8 @@ import {
   Search,
   RotateCcw,
   Sliders,
-  Sparkles
+  Sparkles,
+  ExternalLink
 } from 'lucide-react';
 import UserControlsPage from './components/UserControlsPage';
 import AppsPage from './components/AppsPage';
@@ -2884,31 +2885,36 @@ export default function App() {
                         </div>
                       </Card>
 
-                      <Card className="lg:col-span-2 border-slate-200 bg-white">
-                        <h4 className="font-bold mb-4 flex items-center gap-2 text-slate-900">
-                          <LayoutDashboard className="w-4 h-4 text-indigo-600" /> Site Overview
-                        </h4>
+                      <Card className="lg:col-span-2 border-slate-200 bg-white shadow-sm overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                          <h4 className="font-bold flex items-center gap-2 text-slate-900 text-sm md:text-base">
+                            <LayoutDashboard className="w-5 h-5 text-indigo-600" /> Site Overview
+                          </h4>
+                          <span className="text-xs text-slate-400">Manage sites, custom units, rates, and reference documents</span>
+                        </div>
                         <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
+                          <table className="w-full text-sm border-collapse">
                             <thead>
-                              <tr className="text-slate-400 font-medium border-b border-black/5">
-                                <th className="text-left pb-3">Site Name</th>
-                                <th className="text-right pb-3">Rate</th>
-                                <th className="text-right pb-3">Unit</th>
-                                <th className="text-right pb-3 text-indigo-500">Default EP</th>
-                                <th className="text-right pb-3 text-emerald-600">Site Link</th>
-                                <th className="text-right pb-3 text-teal-600">Mouza Entry Link</th>
-                                <th className="text-right pb-3 text-orange-600">Total EP</th>
-                                <th className="text-right pb-3">Total Scanned</th>
-                                <th className="text-right pb-3">Total Pages</th>
-                                <th className="text-right pb-3">Action</th>
+                              <tr className="bg-slate-50/70 text-slate-500 font-semibold text-[10px] md:text-[11px] uppercase tracking-wider border-b border-slate-100">
+                                <th className="text-left px-4 py-3.5 font-semibold text-slate-500">Site Name</th>
+                                <th className="text-right px-4 py-3.5 font-semibold text-slate-500">Rate</th>
+                                <th className="text-right px-4 py-3.5 font-semibold text-slate-500">Unit</th>
+                                <th className="text-right px-4 py-3.5 font-semibold text-indigo-600 bg-indigo-50/30">Default EP</th>
+                                <th className="text-center px-4 py-3.5 font-semibold text-emerald-600">Site Link</th>
+                                <th className="text-center px-4 py-3.5 font-semibold text-teal-600">Mouza Entry Link</th>
+                                <th className="text-right px-4 py-3.5 font-semibold text-orange-600 bg-orange-50/30">Total EP</th>
+                                <th className="text-right px-4 py-3.5 font-semibold text-slate-500">Total Scanned</th>
+                                <th className="text-right px-4 py-3.5 font-semibold text-slate-500">Total Pages</th>
+                                <th className="text-center px-4 py-3.5 font-semibold text-slate-500">Action</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-black/5">
+                            <tbody className="divide-y divide-slate-100">
                               {sitesSummary.map((site) => (
-                                <tr key={site.id} className="group hover:bg-slate-50 transition-colors">
-                                  <td className="py-4 font-medium text-slate-700">{site.name}</td>
-                                  <td className="py-2 text-right font-mono text-slate-600">
+                                <tr key={site.id} className="group hover:bg-slate-50/50 transition-colors">
+                                  <td className="px-4 py-3.5 text-left font-semibold text-slate-800 min-w-[140px]">{site.name}</td>
+                                  
+                                  {/* Rate cell */}
+                                  <td className="px-4 py-3.5 text-right font-mono text-slate-600 min-w-[110px]">
                                     {isUpdatingSiteRate === site.id ? (
                                       <div className="flex items-center justify-end gap-1.5">
                                         <input 
@@ -2922,23 +2928,23 @@ export default function App() {
                                         <button 
                                           type="button"
                                           onClick={() => updateSiteRate(site.id, parseFloat(newSiteRateValue) || 0)}
-                                          className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition font-inherit"
+                                          className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
                                           title="Save"
                                         >
-                                          <Check className="w-3.5 h-3.5" />
+                                          <Check className="w-3 h-3" />
                                         </button>
                                         <button 
                                           type="button"
                                           onClick={() => setIsUpdatingSiteRate(null)}
-                                          className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition font-inherit"
+                                          className="p-1 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition"
                                           title="Cancel"
                                         >
-                                          <X className="w-3.5 h-3.5" />
+                                          <X className="w-3 h-3" />
                                         </button>
                                       </div>
                                     ) : (
-                                      <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
-                                        <span>
+                                      <div className="flex items-center justify-end gap-1 min-h-[28px]">
+                                        <span className="font-semibold">
                                           {site.rate !== undefined && site.rate !== null 
                                             ? site.rate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) 
                                             : '0.30'}
@@ -2949,15 +2955,17 @@ export default function App() {
                                             setIsUpdatingSiteRate(site.id);
                                             setNewSiteRateValue(site.rate?.toString() || '0.30');
                                           }}
-                                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all ml-1"
                                           title="Edit Rate"
                                         >
-                                          <Edit className="w-3.5 h-3.5" />
+                                          <Edit className="w-3 h-3" />
                                         </button>
                                       </div>
                                     )}
                                   </td>
-                                  <td className="py-2 text-right text-slate-500 text-xs">
+
+                                  {/* Unit cell */}
+                                  <td className="px-4 py-3.5 text-right text-slate-600 min-w-[110px]">
                                     {isUpdatingSiteUnit === site.id ? (
                                       <div className="flex items-center justify-end gap-1.5">
                                         <input 
@@ -2965,45 +2973,46 @@ export default function App() {
                                           value={newSiteUnitValue}
                                           onChange={(e) => setNewSiteUnitValue(e.target.value)}
                                           placeholder="Unit"
-                                          className="w-20 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-550 font-bold"
+                                          className="w-16 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-550 font-bold"
                                           autoFocus
                                         />
                                         <button 
                                           type="button"
                                           onClick={() => updateSiteUnit(site.id, newSiteUnitValue || 'Files')}
-                                          className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition font-inherit"
+                                          className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
                                           title="Save"
                                         >
-                                          <Check className="w-3.5 h-3.5" />
+                                          <Check className="w-3 h-3" />
                                         </button>
                                         <button 
                                           type="button"
                                           onClick={() => setIsUpdatingSiteUnit(null)}
-                                          className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition font-inherit"
+                                          className="p-1 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition"
                                           title="Cancel"
                                         >
-                                          <X className="w-3.5 h-3.5" />
+                                          <X className="w-3 h-3" />
                                         </button>
                                       </div>
                                     ) : (
-                                      <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
-                                        <span>{site.unit || 'Files'}</span>
+                                      <div className="flex items-center justify-end gap-1 min-h-[28px]">
+                                        <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">{site.unit || 'Files'}</span>
                                         <button 
                                           type="button"
                                           onClick={() => {
                                             setIsUpdatingSiteUnit(site.id);
                                             setNewSiteUnitValue(site.unit || 'Files');
                                           }}
-                                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all ml-1"
                                           title="Edit Unit"
                                         >
-                                          <Edit className="w-3.5 h-3.5" />
+                                          <Edit className="w-3 h-3" />
                                         </button>
                                       </div>
                                     )}
                                   </td>
-                                  {/* Default EP inline configuration */}
-                                  <td className="py-2 text-right text-slate-500 text-xs">
+
+                                  {/* Default EP cell */}
+                                  <td className="px-4 py-3.5 text-right text-slate-600 bg-indigo-50/10 min-w-[120px]">
                                     {isUpdatingSiteDefaultEP === site.id ? (
                                       <div className="flex items-center justify-end gap-1.5">
                                         <input 
@@ -3017,22 +3026,22 @@ export default function App() {
                                         <button 
                                           type="button"
                                           onClick={() => updateSiteDefaultEP(site.id, parseInt(newSiteDefaultEPValue) || 0)}
-                                          className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition font-inherit"
+                                          className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
                                           title="Save"
                                         >
-                                          <Check className="w-3.5 h-3.5" />
+                                          <Check className="w-3 h-3" />
                                         </button>
                                         <button 
                                           type="button"
                                           onClick={() => setIsUpdatingSiteDefaultEP(null)}
-                                          className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition font-inherit"
+                                          className="p-1 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition"
                                           title="Cancel"
                                         >
-                                          <X className="w-3.5 h-3.5" />
+                                          <X className="w-3 h-3" />
                                         </button>
                                       </div>
                                     ) : (
-                                      <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
+                                      <div className="flex items-center justify-end gap-1 min-h-[28px]">
                                         <span className="font-bold text-indigo-600 font-mono">{site.default_extra_pages ?? 0}</span>
                                         <button 
                                           type="button"
@@ -3040,139 +3049,157 @@ export default function App() {
                                             setIsUpdatingSiteDefaultEP(site.id);
                                             setNewSiteDefaultEPValue((site.default_extra_pages ?? 0).toString());
                                           }}
-                                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all ml-1"
                                           title="Edit Default Extra Pages"
                                         >
-                                          <Edit className="w-3.5 h-3.5" />
+                                          <Edit className="w-3 h-3" />
                                         </button>
                                       </div>
                                     )}
                                   </td>
-                                  {/* Site Link inline configuration */}
-                                  <td className="py-2 text-right text-slate-500 text-xs text-nowrap">
+
+                                  {/* Site Link cell */}
+                                  <td className="px-4 py-3.5 text-center min-w-[150px]">
                                     {isUpdatingSiteLink === site.id ? (
-                                      <div className="flex items-center justify-end gap-1.5">
+                                      <div className="flex items-center justify-center gap-1.5">
                                         <input 
                                           type="text" 
                                           value={newSiteLinkValue}
                                           onChange={(e) => setNewSiteLinkValue(e.target.value)}
                                           placeholder="https://..."
-                                          className="w-28 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                                          className="w-24 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
                                           autoFocus
                                         />
                                         <button 
                                           type="button"
                                           onClick={() => updateSiteLink(site.id, newSiteLinkValue)}
-                                          className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition font-inherit"
+                                          className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
                                           title="Save"
                                         >
-                                          <Check className="w-3.5 h-3.5" />
+                                          <Check className="w-3 h-3" />
                                         </button>
                                         <button 
                                           type="button"
                                           onClick={() => setIsUpdatingSiteLink(null)}
-                                          className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition font-inherit"
+                                          className="p-1 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition"
                                           title="Cancel"
                                         >
-                                          <X className="w-3.5 h-3.5" />
+                                          <X className="w-3 h-3" />
                                         </button>
                                       </div>
                                     ) : (
-                                      <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
-                                        <span className="truncate max-w-[120px]" title={site.link || 'No Link'}>
-                                          {site.link ? (
-                                            <a href={site.link} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline text-xs font-semibold">
-                                              {site.link.replace(/^https?:\/\//, '')}
-                                            </a>
-                                          ) : (
-                                            <span className="text-slate-350 italic">No Link</span>
-                                          )}
-                                        </span>
+                                      <div className="flex items-center justify-center gap-1 min-h-[28px]">
+                                        {site.link ? (
+                                          <a 
+                                            href={site.link} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors text-[11px] font-semibold"
+                                            title={site.link}
+                                          >
+                                            <Globe className="w-3 h-3" /> Visit Site
+                                          </a>
+                                        ) : (
+                                          <span className="text-slate-300 italic text-xs">No Link</span>
+                                        )}
                                         <button 
                                           type="button"
                                           onClick={() => {
                                             setIsUpdatingSiteLink(site.id);
                                             setNewSiteLinkValue(site.link || '');
                                           }}
-                                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all ml-1"
                                           title="Edit Site Link"
                                         >
-                                          <Edit className="w-3.5 h-3.5" />
+                                          <Edit className="w-3 h-3" />
                                         </button>
                                       </div>
                                     )}
                                   </td>
-                                  {/* Mouza Entry Link inline configuration */}
-                                  <td className="py-2 text-right text-slate-500 text-xs text-nowrap">
+
+                                  {/* Mouza Entry Link cell */}
+                                  <td className="px-4 py-3.5 text-center min-w-[150px]">
                                     {isUpdatingSiteMouzaEntryLink === site.id ? (
-                                      <div className="flex items-center justify-end gap-1.5">
+                                      <div className="flex items-center justify-center gap-1.5">
                                         <input 
                                           type="text" 
                                           value={newSiteMouzaEntryLinkValue}
                                           onChange={(e) => setNewSiteMouzaEntryLinkValue(e.target.value)}
                                           placeholder="https://..."
-                                          className="w-28 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs text-right outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                                          className="w-24 bg-white border border-slate-200 rounded px-1.5 py-1 text-xs outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
                                           autoFocus
                                         />
                                         <button 
                                           type="button"
                                           onClick={() => updateSiteMouzaEntryLink(site.id, newSiteMouzaEntryLinkValue)}
-                                          className="p-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition font-inherit"
+                                          className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
                                           title="Save"
                                         >
-                                          <Check className="w-3.5 h-3.5" />
+                                          <Check className="w-3 h-3" />
                                         </button>
                                         <button 
                                           type="button"
                                           onClick={() => setIsUpdatingSiteMouzaEntryLink(null)}
-                                          className="p-1.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition font-inherit"
+                                          className="p-1 bg-slate-200 text-slate-600 rounded hover:bg-slate-300 transition"
                                           title="Cancel"
                                         >
-                                          <X className="w-3.5 h-3.5" />
+                                          <X className="w-3 h-3" />
                                         </button>
                                       </div>
                                     ) : (
-                                      <div className="flex items-center justify-end gap-1.5 min-h-[36px]">
-                                        <span className="truncate max-w-[120px]" title={site.mouza_entry_link || 'No Link'}>
-                                          {site.mouza_entry_link ? (
-                                            <a href={site.mouza_entry_link} target="_blank" rel="noopener noreferrer" className="text-teal-600 hover:underline text-xs font-semibold">
-                                              {site.mouza_entry_link.replace(/^https?:\/\//, '')}
-                                            </a>
-                                          ) : (
-                                            <span className="text-slate-350 italic">No Link</span>
-                                          )}
-                                        </span>
+                                      <div className="flex items-center justify-center gap-1 min-h-[28px]">
+                                        {site.mouza_entry_link ? (
+                                          <a 
+                                            href={site.mouza_entry_link} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-teal-50 text-teal-700 hover:bg-teal-100 transition-colors text-[11px] font-semibold"
+                                            title={site.mouza_entry_link}
+                                          >
+                                            <ExternalLink className="w-3 h-3" /> Entry Form
+                                          </a>
+                                        ) : (
+                                          <span className="text-slate-300 italic text-xs">No Link</span>
+                                        )}
                                         <button 
                                           type="button"
                                           onClick={() => {
                                             setIsUpdatingSiteMouzaEntryLink(site.id);
                                             setNewSiteMouzaEntryLinkValue(site.mouza_entry_link || '');
                                           }}
-                                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all ml-1"
                                           title="Edit Mouza Entry Link"
                                         >
-                                          <Edit className="w-3.5 h-3.5" />
+                                          <Edit className="w-3 h-3" />
                                         </button>
                                       </div>
                                     )}
                                   </td>
-                                  <td className="py-4 text-right font-mono text-orange-600">{site.extra_pages?.toLocaleString() || '0'}</td>
-                                  <td className="py-4 text-right font-mono text-slate-600">{site.total_files?.toLocaleString() || '0'}</td>
-                                  <td className="py-4 text-right font-mono text-slate-600">{site.total_pages?.toLocaleString() || '0'}</td>
-                                  <td className="py-4 text-right">
+
+                                  <td className="px-4 py-3.5 text-right font-mono text-orange-600 font-semibold bg-orange-50/10 min-w-[100px]">
+                                    {site.extra_pages?.toLocaleString() || '0'}
+                                  </td>
+                                  <td className="px-4 py-3.5 text-right font-mono text-slate-700 font-medium min-w-[110px]">
+                                    {site.total_files?.toLocaleString() || '0'}
+                                  </td>
+                                  <td className="px-4 py-3.5 text-right font-mono text-slate-700 font-medium min-w-[110px]">
+                                    {site.total_pages?.toLocaleString() || '0'}
+                                  </td>
+                                  
+                                  <td className="px-4 py-3.5 text-center min-w-[80px]">
                                     {confirmDeleteSite === site.id ? (
-                                      <div className="flex justify-end gap-1">
+                                      <div className="flex justify-center gap-1">
                                         <button 
                                           type="button"
                                           onClick={() => handleDeleteSite(site.id)}
-                                          className="px-2 py-1 bg-red-600 text-white text-[10px] font-bold rounded hover:bg-red-700 font-inherit"
+                                          className="px-2 py-1 bg-red-600 text-white text-[10px] font-bold rounded hover:bg-red-700"
                                         >
                                           Confirm
                                         </button>
                                         <button 
                                           type="button"
                                           onClick={() => setConfirmDeleteSite(null)}
-                                          className="px-2 py-1 bg-slate-200 text-slate-600 text-[10px] font-bold rounded hover:bg-slate-300 font-inherit"
+                                          className="px-2 py-1 bg-slate-200 text-slate-600 text-[10px] font-bold rounded hover:bg-slate-300"
                                         >
                                           No
                                         </button>
@@ -3181,7 +3208,7 @@ export default function App() {
                                       <button 
                                         type="button"
                                         onClick={() => setConfirmDeleteSite(site.id)}
-                                        className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
+                                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                                         title="Delete Site"
                                       >
                                         <Trash2 className="w-4 h-4" />
@@ -3191,26 +3218,26 @@ export default function App() {
                                 </tr>
                               ))}
                             </tbody>
-                            <tfoot className="border-t-2 border-slate-100">
-                              <tr className="bg-slate-50/50 font-bold">
-                                <td className="py-4 text-slate-900 pl-4">GRAND TOTAL</td>
-                                <td className="py-4"></td>
-                                <td className="py-4"></td>
-                                <td className="py-4 text-right font-mono text-indigo-650">
+                            <tfoot className="bg-slate-50 border-t-2 border-slate-200">
+                              <tr className="font-bold text-slate-900">
+                                <td className="px-4 py-4 text-left text-xs uppercase tracking-wider font-extrabold text-slate-800">GRAND TOTAL</td>
+                                <td className="px-4 py-4"></td>
+                                <td className="px-4 py-4"></td>
+                                <td className="px-4 py-4 text-right font-mono text-indigo-700 bg-indigo-50/20">
                                   {sitesSummary.reduce((sum, s) => sum + (s.default_extra_pages || 0), 0).toLocaleString()}
                                 </td>
-                                <td className="py-4"></td>
-                                <td className="py-4"></td>
-                                <td className="py-4 text-right font-mono text-orange-700">
+                                <td className="px-4 py-4"></td>
+                                <td className="px-4 py-4"></td>
+                                <td className="px-4 py-4 text-right font-mono text-orange-700 bg-orange-50/20">
                                   {sitesSummary.reduce((sum, s) => sum + (s.extra_pages || 0), 0).toLocaleString()}
                                 </td>
-                                <td className="py-4 text-right font-mono text-slate-900">
+                                <td className="px-4 py-4 text-right font-mono text-slate-900">
                                   {sitesSummary.reduce((sum, s) => sum + (s.total_files || 0), 0).toLocaleString()}
                                 </td>
-                                <td className="py-4 text-right font-mono text-slate-900">
+                                <td className="px-4 py-4 text-right font-mono text-slate-900">
                                   {sitesSummary.reduce((sum, s) => sum + (s.total_pages || 0), 0).toLocaleString()}
                                 </td>
-                                <td className="py-4"></td>
+                                <td className="px-4 py-4"></td>
                               </tr>
                             </tfoot>
                           </table>
