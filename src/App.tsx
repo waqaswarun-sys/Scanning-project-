@@ -51,6 +51,7 @@ import {
 import { cn } from './lib/utils';
 import { Site, Employee, ScanningData, Stats, MouzaEntry } from './types';
 import { LoginPage } from './components/LoginPage';
+import { GoogleSheetsImporter } from './components/GoogleSheetsImporter';
 
 // --- Components ---
 
@@ -2286,6 +2287,19 @@ export default function App() {
                     {saveMessage.text}
                   </div>
                 )}
+
+                {/* Google Sheets Auto-Importer */}
+                <GoogleSheetsImporter
+                  adminData={adminData}
+                  adminDate={adminDate}
+                  selectedSiteId={selectedSiteId}
+                  sites={sites}
+                  stats={stats}
+                  onImportSuccess={(updatedData, importFeedback) => {
+                    setAdminData(updatedData);
+                    setParserFeedback(importFeedback);
+                  }}
+                />
 
                 {/* WhatsApp Report Auto-Parser */}
                 <div className="mb-6 bg-slate-50 border border-slate-200/60 rounded-2xl p-5 shadow-sm">
