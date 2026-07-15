@@ -55,7 +55,7 @@ if (!getApps().length) {
   }
   initializeApp({
     credential: cert(serviceAccount),
-    projectId: firebaseConfig.projectId,
+    projectId: firebaseConfig.project_id,
   });
 }
 
