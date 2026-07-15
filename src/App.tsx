@@ -255,6 +255,11 @@ export default function App() {
           const permissions = user.role === 'admin' ? ['main-view', 'user-controls', 'admin-operators', 'admin-sites', 'admin-management'] : (user.permissions || []);
           setView(currentView => {
             if (user.role !== 'admin') {
+              const userPerms = user.permissions || [];
+              // If user only has data entry permission and not main view, land on data entry page
+              if (userPerms.includes('admin-data-entry') && !userPerms.includes('main-view')) {
+                return 'admin-data-entry';
+              }
               // Dashboard first if assigned, else first available permission
               if (permissions.includes('main-view')) return 'main-view';
               return permissions.length > 0 ? permissions[0] as any : 'main-view';
@@ -311,6 +316,10 @@ export default function App() {
     if (currentUser.role === 'admin') return true;
     return currentUser.permissions?.includes(permission);
   };
+
+  const isDataEntryOnly = currentUser?.role !== 'admin' &&
+    hasPermission('admin-data-entry') &&
+    !hasPermission('main-view');
   const handleLogout = useCallback(async () => {
     console.log('[AUTH] Initiating logout...');
     try {
@@ -2231,19 +2240,21 @@ export default function App() {
                     </div>
 
                     {/* Totals displaying next to the date */}
-                    <div className="flex items-center gap-3 px-3 py-1 bg-indigo-50/60 border border-indigo-100 rounded-xl h-[42px]">
-                      <div className="text-left leading-none">
-                        <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Today's Entry</span>
-                        <div className="flex items-center gap-4 mt-0.5">
-                          <span className="text-xs font-bold text-slate-700">
-                            Pages: <span className="text-indigo-600">{adminData.reduce((sum, item) => sum + (item.pages || 0), 0).toLocaleString()}</span>
-                          </span>
-                          <span className="text-xs font-bold text-slate-700">
-                            {(stats?.overall?.unit) || (sites.find(s => s.id === selectedSiteId) as any)?.unit || 'Files'}: <span className="text-indigo-600">{adminData.reduce((sum, item) => sum + (item.files || 0), 0).toLocaleString()}</span>
-                          </span>
+                    {!isDataEntryOnly && (
+                      <div className="flex items-center gap-3 px-3 py-1 bg-indigo-50/60 border border-indigo-100 rounded-xl h-[42px]">
+                        <div className="text-left leading-none">
+                          <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Today's Entry</span>
+                          <div className="flex items-center gap-4 mt-0.5">
+                            <span className="text-xs font-bold text-slate-700">
+                              Pages: <span className="text-indigo-600">{adminData.reduce((sum, item) => sum + (item.pages || 0), 0).toLocaleString()}</span>
+                            </span>
+                            <span className="text-xs font-bold text-slate-700">
+                              {(stats?.overall?.unit) || (sites.find(s => s.id === selectedSiteId) as any)?.unit || 'Files'}: <span className="text-indigo-600">{adminData.reduce((sum, item) => sum + (item.files || 0), 0).toLocaleString()}</span>
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     <button 
                       onClick={() => saveAdminData()}
