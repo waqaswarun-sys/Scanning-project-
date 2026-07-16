@@ -60,7 +60,7 @@ if (!getApps().length) {
   
   // If we don't have a service account from env, or it's missing private_key, fall back to firebaseConfig
   if (!serviceAccount || !serviceAccount.private_key) {
-    serviceAccount = firebaseConfig;
+    serviceAccount = { ...firebaseConfig };
   }
 
   if (serviceAccount.private_key) {
