@@ -1,5 +1,6 @@
 {
   "name": "ScanTrack Pro",
-  "description": "ScanTrack Pro is a document scanning and tracking system for offices and record management.",
-  "requestFramePermissions": []
+  "description": "ScanTrack Pro is a document scanning and tracking system for offices and record management with server status controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

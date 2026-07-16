@@ -163,6 +163,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [maintenanceActive, setMaintenanceActive] = useState<boolean>(false);
 
   const [isUpdatingRate, setIsUpdatingRate] = useState<string | number | null>(null);
   const [newRateValue, setNewRateValue] = useState('');
@@ -305,11 +306,41 @@ export default function App() {
     }
   }, [apiFetch]);
 
+  const fetchMaintenanceStatus = useCallback(async () => {
+    try {
+      const res = await apiFetch(`/api/maintenance-status?t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMaintenanceActive(!!data.enabled);
+      }
+    } catch (err) {
+      console.error('[MAINTENANCE] Error fetching status:', err);
+    }
+  }, [apiFetch]);
+
   useEffect(() => {
     console.log(`[APP] Mount. URL: ${window.location.href}`);
     console.log(`[APP] localStorage authToken: ${localStorage.getItem('authToken') ? 'present' : 'missing'}`);
     checkAuth();
-  }, [checkAuth]);
+    fetchMaintenanceStatus();
+
+    // Periodically poll maintenance status every 15 seconds
+    const pollInterval = setInterval(() => {
+      fetchMaintenanceStatus();
+    }, 15000);
+
+    // Listen to local maintenance-updated events
+    const handleMaintenanceUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      setMaintenanceActive(!!customEvent.detail);
+    };
+    window.addEventListener('maintenance-updated', handleMaintenanceUpdate);
+    
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('maintenance-updated', handleMaintenanceUpdate);
+    };
+  }, [checkAuth, fetchMaintenanceStatus]);
 
   const hasPermission = (permission: string) => {
     if (!currentUser) return false;
@@ -1627,6 +1658,52 @@ export default function App() {
 
   if (!isAuthenticated) {
     return <LoginPage onLogin={checkAuth} />;
+  }
+
+  if (isAuthenticated && maintenanceActive && currentUser?.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden text-center p-8 space-y-6">
+          <div className="mx-auto w-20 h-20 bg-rose-50 rounded-2xl flex items-center justify-center text-rose-600 shadow-inner">
+            <svg viewBox="0 0 24 24" fill="none" className="w-12 h-12" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2v20" />
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-15" />
+              <line x1="4" y1="4" x2="20" y2="20" stroke="currentColor" strokeWidth="3" />
+            </svg>
+          </div>
+          
+          <div className="space-y-2">
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">System Temporarily Offline</h2>
+            <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Scheduled Maintenance</p>
+          </div>
+
+          <p className="text-slate-600 text-sm leading-relaxed">
+            The server is currently down or undergoing maintenance. 
+            Please try again in a few minutes. We apologize for any inconvenience.
+          </p>
+
+          <div className="bg-rose-50/50 rounded-2xl p-4 border border-rose-100/50 text-left">
+            <p className="text-xs font-bold text-rose-700 flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-pulse" />
+              سرور عارضی طور پر بند ہے
+            </p>
+            <p className="text-[11px] text-rose-600/80 mt-1 font-medium">
+              سسٹم کی دیکھ بھال جاری ہے، براہِ کرم تھوڑی دیر بعد دوبارہ کوشش کریں۔
+            </p>
+          </div>
+
+          <div className="pt-2">
+            <button
+              onClick={handleLogout}
+              className="w-full bg-slate-800 hover:bg-slate-900 text-white text-sm font-bold py-3 px-6 rounded-xl transition-all cursor-pointer shadow-md shadow-slate-200"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (loading) return (

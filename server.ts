@@ -49,18 +49,45 @@ import { Site, Employee, ScanningData, Stats } from './src/types.ts';
 import firebaseConfig from './firebase-applet-config.json';
 
 if (!getApps().length) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+  let serviceAccount: any = {};
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } catch (e) {
+      console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT env variable:", e);
+    }
+  }
+  
+  // If we don't have a service account from env, or it's missing private_key, fall back to firebaseConfig
+  if (!serviceAccount || !serviceAccount.private_key) {
+    serviceAccount = firebaseConfig;
+  }
+
   if (serviceAccount.private_key) {
     serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
   }
   initializeApp({
     credential: cert(serviceAccount),
-    projectId: firebaseConfig.project_id,
+    projectId: serviceAccount.project_id || firebaseConfig.project_id,
   });
 }
 
 const db = getFirestore();
-const resend = new Resend(process.env.RESEND_API_KEY);
+
+let resend: any;
+if (process.env.RESEND_API_KEY) {
+  resend = new Resend(process.env.RESEND_API_KEY);
+} else {
+  console.warn("RESEND_API_KEY environment variable is not set. Email sending will be mocked.");
+  resend = {
+    emails: {
+      send: async (payload: any) => {
+        console.log("[MOCK EMAIL] Sending email:", payload);
+        return { data: { id: "mock_id" }, error: null };
+      }
+    }
+  };
+}
 
 
 // Seed default admin if not exists
@@ -993,6 +1020,40 @@ async function startServer() {
       res.json({ success: true });
     } catch (err) {
       console.error('[UPDATE-PROFILE] Error:', err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Maintenance Mode Routes
+  app.get("/api/maintenance-status", async (req: any, res: any) => {
+    try {
+      const doc = await db.collection('settings').doc('maintenance').get();
+      if (doc.exists) {
+        res.json({ enabled: !!doc.data()?.enabled });
+      } else {
+        res.json({ enabled: false });
+      }
+    } catch (err) {
+      console.error('[MAINTENANCE] Fetch error:', err);
+      res.json({ enabled: false });
+    }
+  });
+
+  app.post("/api/maintenance-status", requireAuth, async (req: any, res: any) => {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    try {
+      const { enabled } = req.body;
+      await db.collection('settings').doc('maintenance').set({
+        enabled: !!enabled,
+        updated_by: req.user.username,
+        updated_at: FieldValue.serverTimestamp()
+      }, { merge: true });
+      console.log(`[MAINTENANCE] Updated to: ${enabled} by ${req.user.username}`);
+      res.json({ success: true, enabled: !!enabled });
+    } catch (err) {
+      console.error('[MAINTENANCE] Update error:', err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
