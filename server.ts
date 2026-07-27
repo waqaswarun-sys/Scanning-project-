@@ -73,7 +73,8 @@ if (!getApps().length) {
   }
 }
 
-const rawFirestoreDb = getFirestore();
+const firestoreDbId = (firebaseConfig as any).firestoreDatabaseId;
+const rawFirestoreDb = firestoreDbId ? getFirestore(getApps()[0], firestoreDbId) : getFirestore();
 const resend = new Resend(process.env.RESEND_API_KEY || 're_dummy_key');
 
 // Local persistent storage fallback when Firestore is unavailable

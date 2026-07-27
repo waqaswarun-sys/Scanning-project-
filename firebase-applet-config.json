@@ -3,6 +3,7 @@
   "appId": "1:286534090312:web:817b18a00fecf2073be27d",
   "apiKey": "AIzaSyCXeKe3H42EBUJg-qluXWqoHjQKLEMUe_E",
   "authDomain": "gen-lang-client-0897427414.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-scantrackpro-f04e61b4-7a42-4e35-bde9-d3f3e196bed6",
   "storageBucket": "gen-lang-client-0897427414.firebasestorage.app",
   "messagingSenderId": "286534090312",
   "measurementId": "",
