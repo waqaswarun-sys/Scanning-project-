@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Lock, Save, AlertCircle, CheckCircle2, Users, Plus, Trash2, Shield, Key, X, Check, Settings } from 'lucide-react';
+import { User, Lock, Save, AlertCircle, CheckCircle2, Users, Plus, Trash2, Shield, Key, X, Check, Settings, Power, Server } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface UserControlsPageProps {
@@ -14,6 +14,10 @@ export default function UserControlsPage({ apiFetch, currentUser }: UserControls
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  // Maintenance State
+  const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
+  const [maintenanceLoading, setMaintenanceLoading] = useState(false);
 
   // User Management State
   const [users, setUsers] = useState<any[]>([]);
@@ -44,8 +48,53 @@ export default function UserControlsPage({ apiFetch, currentUser }: UserControls
       fetchUsers();
       fetchSites();
       fetchAllOperators();
+      fetchMaintenanceStatus();
     }
   }, [currentUser]);
+
+  const fetchMaintenanceStatus = async () => {
+    try {
+      const res = await apiFetch('/api/maintenance-status');
+      if (res.ok) {
+        const data = await res.json();
+        setMaintenanceEnabled(data.enabled);
+      }
+    } catch (err) {
+      console.error('Failed to fetch maintenance status:', err);
+    }
+  };
+
+  const handleToggleMaintenance = async () => {
+    setMaintenanceLoading(true);
+    setMessage(null);
+    try {
+      const targetState = !maintenanceEnabled;
+      const res = await apiFetch('/api/maintenance-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: targetState })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMaintenanceEnabled(data.enabled);
+        setMessage({
+          type: 'success',
+          text: data.enabled
+            ? "Server Down Mode is now ON. All non-admin users will see the 'Server Down' page."
+            : "Server Down Mode is now OFF. All users can access the site normally."
+        });
+        // Dispatch a custom event to notify App.tsx immediately if needed
+        window.dispatchEvent(new CustomEvent('maintenance-updated', { detail: data.enabled }));
+      } else {
+        setMessage({ type: 'error', text: 'Failed to update Server Down Mode.' });
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: 'An error occurred while updating maintenance status.' });
+    } finally {
+      setMaintenanceLoading(false);
+    }
+  };
 
   const fetchAllOperators = async () => {
     try {
@@ -296,7 +345,63 @@ export default function UserControlsPage({ apiFetch, currentUser }: UserControls
         </div>
 
         {currentUser?.role === 'admin' && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <>
+            {/* Server Down Toggle Card */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-8">
+              <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-rose-100 rounded-lg text-rose-600">
+                    <Server className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Server Down (Maintenance Mode)</h2>
+                    <p className="text-sm text-slate-500">Temporarily show 'Server Down' screen to all users except Admin</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200 gap-4">
+                  <div className="flex-1">
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
+                      maintenanceEnabled 
+                        ? 'bg-rose-100 text-rose-700 animate-pulse' 
+                        : 'bg-emerald-100 text-emerald-700'
+                    }`}>
+                      <span className={`w-2 h-2 rounded-full ${maintenanceEnabled ? 'bg-rose-600' : 'bg-emerald-600'}`} />
+                      {maintenanceEnabled ? 'SERVER DOWN MODE: ACTIVE' : 'SERVER ONLINE: ALL GOOD'}
+                    </span>
+                    <p className="text-xs text-slate-500 mt-2 font-medium leading-relaxed">
+                      {maintenanceEnabled 
+                        ? 'All non-admin users are locked out and will see a "Server Down" screen upon logging in.' 
+                        : 'All users can access and view their designated pages normally.'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={maintenanceLoading}
+                    onClick={handleToggleMaintenance}
+                    className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shrink-0 cursor-pointer ${
+                      maintenanceEnabled
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-100'
+                        : 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-100'
+                    }`}
+                  >
+                    <Power className="w-4 h-4" />
+                    {maintenanceLoading ? (
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : maintenanceEnabled ? (
+                      'Turn Server Online'
+                    ) : (
+                      'Go Server Down'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600">
@@ -546,7 +651,8 @@ export default function UserControlsPage({ apiFetch, currentUser }: UserControls
               </div>
             </div>
           </div>
-        )}
+        </>
+      )}
       </div>
     </div>
   );

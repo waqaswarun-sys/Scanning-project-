@@ -31,7 +31,9 @@ import {
   Sliders,
   Sparkles,
   ExternalLink,
-  Clock
+  Target,
+  Calculator,
+  Zap
 } from 'lucide-react';
 import UserControlsPage from './components/UserControlsPage';
 import AppsPage from './components/AppsPage';
@@ -106,448 +108,6 @@ const StatCard = ({ title, value, icon: Icon, colorClass, loading, href }: { tit
   return cardContent;
 };
 
-// --- Sub-Components for Records EP & Site EP Target Calculator ---
-
-const RecordsEPSection = ({ 
-  stats, 
-  selectedSiteId, 
-  apiFetch,
-  sitesSummary 
-}: { 
-  stats: Stats | null; 
-  selectedSiteId: string | number | null; 
-  apiFetch: any;
-  sitesSummary: any[];
-}) => {
-  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
-  const [dateData, setDateData] = useState<{ extra_pages: number; regular_pages: number; total_files: number } | null>(null);
-  const [loadingDateData, setLoadingDateData] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'month' | 'date' | 'both'>('both');
-
-  const fetchDateEPData = useCallback(async (siteId: string | number, dateStr: string) => {
-    if (!siteId || !dateStr) return;
-    setLoadingDateData(true);
-    try {
-      const epRes = await apiFetch(`/api/sites/${siteId}/daily-extra-pages?date=${dateStr}`);
-      let epValue = 0;
-      if (epRes.ok) {
-        const epJson = await epRes.json();
-        epValue = epJson.extra_pages || 0;
-      }
-      const scanRes = await apiFetch(`/api/scanning-data?siteId=${siteId}&date=${dateStr}`);
-      let regPages = 0;
-      let regFiles = 0;
-      if (scanRes.ok) {
-        const scanJson = await scanRes.json();
-        if (Array.isArray(scanJson.data)) {
-          regPages = scanJson.data.reduce((sum: number, item: any) => sum + (item.pages || 0), 0);
-          regFiles = scanJson.data.reduce((sum: number, item: any) => sum + (item.files || 0), 0);
-        }
-      }
-      setDateData({ extra_pages: epValue, regular_pages: regPages, total_files: regFiles });
-    } catch (err) {
-      console.error('Error fetching date EP:', err);
-    } finally {
-      setLoadingDateData(false);
-    }
-  }, [apiFetch]);
-
-  useEffect(() => {
-    const targetSiteId = selectedSiteId || (sitesSummary.length > 0 ? sitesSummary[0].id : null);
-    if (targetSiteId && selectedDate) {
-      fetchDateEPData(targetSiteId, selectedDate);
-    }
-  }, [selectedSiteId, selectedDate, sitesSummary, fetchDateEPData]);
-
-  const formatMonthName = (monthStr: string) => {
-    try {
-      const [year, month] = monthStr.split('-');
-      const date = new Date(parseInt(year), parseInt(month) - 1, 1);
-      return format(date, 'MMMM yyyy');
-    } catch {
-      return monthStr;
-    }
-  };
-
-  const totalEP = stats?.monthly?.reduce((sum, m) => sum + (m.extra_pages || 0), 0) || 0;
-  const totalRegularPages = stats?.monthly?.reduce((sum, m) => sum + Math.max(0, m.pages - (m.extra_pages || 0)), 0) || 0;
-  const totalAllPages = stats?.monthly?.reduce((sum, m) => sum + m.pages, 0) || 0;
-  const totalFiles = stats?.monthly?.reduce((sum, m) => sum + (m.files || 0), 0) || 0;
-
-  return (
-    <div className="space-y-6 mt-6">
-      {/* View Toggle Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-        <div>
-          <h4 className="font-bold text-slate-900 flex items-center gap-2 text-sm md:text-base">
-            <Layers className="w-5 h-5 text-indigo-600" /> EP Pages Breakdown & Specific Date Lookup
-          </h4>
-          <p className="text-xs text-slate-500">View accumulated extra pages month-wise or inspect a specific date's EP.</p>
-        </div>
-        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-2xs self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('both')}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
-              activeTab === 'both' ? "bg-indigo-600 text-white shadow-2xs" : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            All Views
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('month')}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
-              activeTab === 'month' ? "bg-indigo-600 text-white shadow-2xs" : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            Month Wise
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('date')}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
-              activeTab === 'date' ? "bg-indigo-600 text-white shadow-2xs" : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            Specific Date
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Month-wise EP Breakdown */}
-        {(activeTab === 'both' || activeTab === 'month') && (
-          <Card className={cn(activeTab === 'month' ? "lg:col-span-2" : "")}>
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
-              <h4 className="font-bold text-slate-900 flex items-center gap-2">
-                <CalendarIcon className="w-4 h-4 text-orange-600" /> Month-wise EP Pages
-              </h4>
-              <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2.5 py-1 rounded-full border border-orange-200">
-                Total EP: {totalEP.toLocaleString()}
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-slate-400 font-bold border-b border-slate-100 text-left text-xs uppercase tracking-wider">
-                    <th className="pb-2">Month</th>
-                    <th className="pb-2 text-right">Files</th>
-                    <th className="pb-2 text-right">Regular Pages</th>
-                    <th className="pb-2 text-right text-orange-600">EP Pages</th>
-                    <th className="pb-2 text-right">Total Pages</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {stats?.monthly && stats.monthly.length > 0 ? (
-                    stats.monthly.map((m) => {
-                      const regPages = Math.max(0, m.pages - (m.extra_pages || 0));
-                      return (
-                        <tr key={m.month} className="hover:bg-slate-50 transition-colors">
-                          <td className="py-3 font-semibold text-slate-800 flex items-center gap-2">
-                            <CalendarIcon className="w-3.5 h-3.5 text-indigo-500" />
-                            {formatMonthName(m.month)}
-                          </td>
-                          <td className="py-3 text-right font-mono text-slate-600">{m.files?.toLocaleString() || 0}</td>
-                          <td className="py-3 text-right font-mono text-slate-600">{regPages.toLocaleString()}</td>
-                          <td className="py-3 text-right font-mono font-bold text-orange-600 bg-orange-50/40 px-2 rounded">
-                            +{(m.extra_pages || 0).toLocaleString()}
-                          </td>
-                          <td className="py-3 text-right font-mono font-bold text-slate-900">{m.pages?.toLocaleString() || 0}</td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan={5} className="py-6 text-center text-slate-400 text-xs italic">
-                        No monthly EP data available yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-                {stats?.monthly && stats.monthly.length > 0 && (
-                  <tfoot className="border-t-2 border-slate-200 font-bold bg-slate-50/60">
-                    <tr>
-                      <td className="py-3 pl-2 text-slate-900">Total</td>
-                      <td className="py-3 text-right font-mono text-slate-900">{totalFiles.toLocaleString()}</td>
-                      <td className="py-3 text-right font-mono text-slate-900">{totalRegularPages.toLocaleString()}</td>
-                      <td className="py-3 text-right font-mono text-orange-700 bg-orange-100/50 px-2 rounded">
-                        +{totalEP.toLocaleString()}
-                      </td>
-                      <td className="py-3 text-right font-mono text-indigo-700">{totalAllPages.toLocaleString()}</td>
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
-            </div>
-          </Card>
-        )}
-
-        {/* Specific Date EP Lookup */}
-        {(activeTab === 'both' || activeTab === 'date') && (
-          <Card className={cn(activeTab === 'date' ? "lg:col-span-2" : "")}>
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
-              <h4 className="font-bold text-slate-900 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-indigo-600" /> Specific Date EP Lookup
-              </h4>
-              {loadingDateData && <span className="text-xs text-indigo-600 animate-pulse font-medium">Fetching...</span>}
-            </div>
-
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-500 uppercase ml-1 block">Select Date to View EP</label>
-                <input 
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-indigo-500/20"
-                />
-              </div>
-
-              {/* Date Output Card */}
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-900 via-slate-900 to-slate-950 text-white shadow-md space-y-4">
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-indigo-300 block">Date Selected</span>
-                    <span className="text-base font-extrabold text-white">
-                      {selectedDate ? format(parseISO(selectedDate), 'EEEE, dd MMMM yyyy') : 'No date selected'}
-                    </span>
-                  </div>
-                  <span className="p-2 bg-indigo-500/20 border border-indigo-400/30 rounded-xl">
-                    <CalendarIcon className="w-5 h-5 text-indigo-300" />
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                    <span className="text-[9px] font-bold text-slate-300 uppercase block mb-1">EP Pages</span>
-                    <span className="text-xl font-bold text-orange-400 font-mono">
-                      {dateData ? `+${(dateData.extra_pages || 0).toLocaleString()}` : '0'}
-                    </span>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                    <span className="text-[9px] font-bold text-slate-300 uppercase block mb-1">Regular Pages</span>
-                    <span className="text-xl font-bold text-indigo-300 font-mono">
-                      {dateData ? (dateData.regular_pages || 0).toLocaleString() : '0'}
-                    </span>
-                  </div>
-                  <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                    <span className="text-[9px] font-bold text-slate-300 uppercase block mb-1">Total Pages</span>
-                    <span className="text-xl font-bold text-emerald-400 font-mono">
-                      {dateData ? ((dateData.regular_pages || 0) + (dateData.extra_pages || 0)).toLocaleString() : '0'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="text-[11px] text-indigo-200/80 italic text-center pt-1">
-                  Files scanned on this date: <strong className="text-white font-mono">{(dateData?.total_files || 0).toLocaleString()}</strong>
-                </div>
-              </div>
-            </div>
-          </Card>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const SiteEPTargetCalculator = ({
-  sitesSummary,
-  apiFetch,
-  onUpdateSuccess
-}: {
-  sitesSummary: any[];
-  apiFetch: any;
-  onUpdateSuccess: () => void;
-}) => {
-  const [selectedSiteId, setSelectedSiteId] = useState<string>('');
-  const [targetEPInput, setTargetEPInput] = useState<string>('');
-  const [targetDaysInput, setTargetDaysInput] = useState<string>('20');
-  const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  useEffect(() => {
-    if (!selectedSiteId && sitesSummary.length > 0) {
-      setSelectedSiteId(sitesSummary[0].id.toString());
-    }
-  }, [sitesSummary, selectedSiteId]);
-
-  const currentSite = sitesSummary.find(s => String(s.id) === String(selectedSiteId));
-
-  useEffect(() => {
-    if (currentSite) {
-      setTargetEPInput(currentSite.target_ep_pages ? currentSite.target_ep_pages.toString() : '50000');
-    }
-  }, [selectedSiteId, currentSite]);
-
-  const currentEP = currentSite?.extra_pages || 0;
-  const targetEP = parseFloat(targetEPInput) || 0;
-  const targetDays = Math.max(1, parseInt(targetDaysInput) || 1);
-  const remainingEP = Math.max(0, targetEP - currentEP);
-  const calculatedDailyEP = Math.ceil(remainingEP / targetDays);
-
-  const handleSaveTargetEP = async () => {
-    if (!selectedSiteId) return;
-    setIsSaving(true);
-    setMessage(null);
-    try {
-      const res = await apiFetch(`/api/sites/${selectedSiteId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_ep_pages: targetEP })
-      });
-      if (res.ok) {
-        setMessage({ type: 'success', text: `Successfully updated Target EP for ${currentSite?.name} to ${targetEP.toLocaleString()} EP pages!` });
-        onUpdateSuccess();
-      } else {
-        setMessage({ type: 'error', text: 'Failed to update target EP.' });
-      }
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: 'error', text: 'Error updating target EP.' });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleApplyDailyEP = async () => {
-    if (!selectedSiteId || calculatedDailyEP <= 0) return;
-    setIsSaving(true);
-    setMessage(null);
-    try {
-      const res = await apiFetch(`/api/sites/${selectedSiteId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ default_extra_pages: calculatedDailyEP })
-      });
-      if (res.ok) {
-        setMessage({ type: 'success', text: `Applied ${calculatedDailyEP.toLocaleString()} EP as site default daily extra pages for ${currentSite?.name}!` });
-        onUpdateSuccess();
-      } else {
-        setMessage({ type: 'error', text: 'Failed to set site default daily extra pages.' });
-      }
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: 'error', text: 'Error applying daily extra pages.' });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  return (
-    <Card className="border-emerald-150 bg-emerald-50/20 mt-8">
-      <div>
-        <h4 className="font-bold flex items-center gap-2 text-emerald-950 text-sm md:text-base">
-          <TrendingUp className="w-5 h-5 text-emerald-600" />
-          Set Site Target EP & Daily EP Requirement Calculator
-        </h4>
-        <p className="text-xs text-slate-500 mt-1">
-          Set target EP pages for each site. The system calculates remaining EP and tells you how many daily EP pages are required to reach target.
-        </p>
-      </div>
-
-      <div className="mt-6 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Select Site</label>
-            <select
-              value={selectedSiteId}
-              onChange={(e) => setSelectedSiteId(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-emerald-500/20"
-            >
-              {sitesSummary.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Target EP Pages</label>
-            <input
-              type="number"
-              value={targetEPInput}
-              onChange={(e) => setTargetEPInput(e.target.value)}
-              placeholder="e.g. 50000"
-              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-emerald-500/20"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Target Days / Days Remaining</label>
-            <input
-              type="number"
-              min="1"
-              value={targetDaysInput}
-              onChange={(e) => setTargetDaysInput(e.target.value)}
-              placeholder="e.g. 20"
-              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-emerald-500/20"
-            />
-          </div>
-        </div>
-
-        {currentSite && (
-          <div className="p-4 bg-white rounded-2xl border border-emerald-200 shadow-2xs space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-center">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Target EP</span>
-                <span className="text-lg font-bold text-slate-900 font-mono">{targetEP.toLocaleString()}</span>
-              </div>
-              <div className="p-3 bg-orange-50 rounded-xl border border-orange-100">
-                <span className="text-[10px] font-bold text-orange-600 uppercase block mb-1">Current EP Achieved</span>
-                <span className="text-lg font-bold text-orange-900 font-mono">{currentEP.toLocaleString()}</span>
-              </div>
-              <div className="p-3 bg-indigo-50 rounded-xl border border-indigo-100">
-                <span className="text-[10px] font-bold text-indigo-600 uppercase block mb-1">Remaining EP Needed</span>
-                <span className="text-lg font-bold text-indigo-900 font-mono">{remainingEP.toLocaleString()}</span>
-              </div>
-              <div className="p-3 bg-emerald-100/60 rounded-xl border border-emerald-300">
-                <span className="text-[10px] font-extrabold text-emerald-800 uppercase block mb-1">Required Daily EP</span>
-                <span className="text-xl font-extrabold text-emerald-900 font-mono">{calculatedDailyEP.toLocaleString()} EP/day</span>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-100">
-              <p className="text-xs text-slate-600">
-                💡 To reach target of <strong className="text-slate-900">{targetEP.toLocaleString()} EP</strong> for <strong className="text-emerald-700">{currentSite.name}</strong> from current <strong className="text-orange-600">{currentEP.toLocaleString()} EP</strong> in <strong className="text-slate-900">{targetDays} days</strong>, you need <strong className="text-emerald-700 text-sm font-bold">{calculatedDailyEP.toLocaleString()} EP / day</strong>.
-              </p>
-              <div className="flex flex-wrap gap-2 shrink-0 w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={handleSaveTargetEP}
-                  disabled={isSaving}
-                  className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-slate-800 transition shadow font-inherit"
-                >
-                  Save Target EP
-                </button>
-                <button
-                  type="button"
-                  onClick={handleApplyDailyEP}
-                  disabled={isSaving || calculatedDailyEP <= 0}
-                  className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 transition shadow font-inherit disabled:opacity-50"
-                >
-                  Set {calculatedDailyEP.toLocaleString()} EP as Default Daily EP
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {message && (
-          <div className={`px-4 py-2.5 rounded-xl text-xs font-medium ${
-            message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
-          }`}>
-            {message.text}
-          </div>
-        )}
-      </div>
-    </Card>
-  );
-};
-
 // --- Main App ---
 
 export default function App() {
@@ -606,6 +166,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [maintenanceActive, setMaintenanceActive] = useState<boolean>(false);
 
   const [isUpdatingRate, setIsUpdatingRate] = useState<string | number | null>(null);
   const [newRateValue, setNewRateValue] = useState('');
@@ -631,6 +192,15 @@ export default function App() {
   const [isSavingPastEP, setIsSavingPastEP] = useState<boolean>(false);
   const [isFetchingPastEP, setIsFetchingPastEP] = useState<boolean>(false);
   const [pastEPMessage, setPastEPMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  // Specific Date Lookup States
+  const [recordLookupDate, setRecordLookupDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const [recordLookupResult, setRecordLookupResult] = useState<{ files: number; regular_pages: number; extra_pages: number; total_pages: number } | null>(null);
+  const [isFetchingRecordLookup, setIsFetchingRecordLookup] = useState<boolean>(false);
+
+  // Target EP & Daily EP Calculator States
+  const [calcMessage, setCalcMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isApplyingCalcDailyEP, setIsApplyingCalcDailyEP] = useState<boolean>(false);
 
 
 
@@ -748,11 +318,41 @@ export default function App() {
     }
   }, [apiFetch]);
 
+  const fetchMaintenanceStatus = useCallback(async () => {
+    try {
+      const res = await apiFetch(`/api/maintenance-status?t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMaintenanceActive(!!data.enabled);
+      }
+    } catch (err) {
+      console.error('[MAINTENANCE] Error fetching status:', err);
+    }
+  }, [apiFetch]);
+
   useEffect(() => {
     console.log(`[APP] Mount. URL: ${window.location.href}`);
     console.log(`[APP] localStorage authToken: ${localStorage.getItem('authToken') ? 'present' : 'missing'}`);
     checkAuth();
-  }, [checkAuth]);
+    fetchMaintenanceStatus();
+
+    // Periodically poll maintenance status every 15 seconds
+    const pollInterval = setInterval(() => {
+      fetchMaintenanceStatus();
+    }, 15000);
+
+    // Listen to local maintenance-updated events
+    const handleMaintenanceUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      setMaintenanceActive(!!customEvent.detail);
+    };
+    window.addEventListener('maintenance-updated', handleMaintenanceUpdate);
+    
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('maintenance-updated', handleMaintenanceUpdate);
+    };
+  }, [checkAuth, fetchMaintenanceStatus]);
 
   const hasPermission = (permission: string) => {
     if (!currentUser) return false;
@@ -1106,6 +706,72 @@ export default function App() {
       setStats(data);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const fetchRecordLookupDate = useCallback(async (siteId?: string | number, dateStr?: string) => {
+    const dateToUse = dateStr || recordLookupDate;
+    const siteToUse = siteId || selectedSiteId || (sitesSummary[0]?.id ?? '');
+    if (!dateToUse || !siteToUse) return;
+    setIsFetchingRecordLookup(true);
+    try {
+      const res = await apiFetch(`/api/sites/${siteToUse}/date-lookup?date=${dateToUse}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRecordLookupResult(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch date lookup', err);
+    } finally {
+      setIsFetchingRecordLookup(false);
+    }
+  }, [apiFetch, recordLookupDate, selectedSiteId, sitesSummary]);
+
+  useEffect(() => {
+    if (recordLookupDate && (selectedSiteId || sitesSummary.length > 0)) {
+      fetchRecordLookupDate();
+    }
+  }, [recordLookupDate, selectedSiteId, sitesSummary, fetchRecordLookupDate]);
+
+  const updateSiteTargetEPSettings = async (siteId: string | number, targetEpPages: number, targetDaysRemaining: number) => {
+    try {
+      const res = await apiFetch(`/api/sites/${siteId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_ep_pages: targetEpPages,
+          target_days_remaining: targetDaysRemaining
+        })
+      });
+      if (res.ok) {
+        setSitesSummary(prev => prev.map(s => String(s.id) === String(siteId) ? { ...s, target_ep_pages: targetEpPages, target_days_remaining: targetDaysRemaining } : s));
+      }
+    } catch (err) {
+      console.error('Failed to update target EP settings', err);
+    }
+  };
+
+  const handleApplyCalculatedDailyEP = async (siteId: string | number, dailyEP: number) => {
+    setIsApplyingCalcDailyEP(true);
+    try {
+      const res = await apiFetch(`/api/sites/${siteId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          default_extra_pages: dailyEP
+        })
+      });
+      if (res.ok) {
+        setCalcMessage({ type: 'success', text: `Applied ${dailyEP.toLocaleString()} as site's default daily extra pages!` });
+        fetchSitesSummary();
+        setTimeout(() => setCalcMessage(null), 4000);
+      } else {
+        setCalcMessage({ type: 'error', text: 'Failed to apply daily extra pages.' });
+      }
+    } catch (err) {
+      setCalcMessage({ type: 'error', text: 'An error occurred while applying daily extra pages.' });
+    } finally {
+      setIsApplyingCalcDailyEP(false);
     }
   };
 
@@ -2070,6 +1736,52 @@ export default function App() {
 
   if (!isAuthenticated) {
     return <LoginPage onLogin={checkAuth} />;
+  }
+
+  if (isAuthenticated && maintenanceActive && currentUser?.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden text-center p-8 space-y-6">
+          <div className="mx-auto w-20 h-20 bg-rose-50 rounded-2xl flex items-center justify-center text-rose-600 shadow-inner">
+            <svg viewBox="0 0 24 24" fill="none" className="w-12 h-12" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2v20" />
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-15" />
+              <line x1="4" y1="4" x2="20" y2="20" stroke="currentColor" strokeWidth="3" />
+            </svg>
+          </div>
+          
+          <div className="space-y-2">
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">System Temporarily Offline</h2>
+            <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Scheduled Maintenance</p>
+          </div>
+
+          <p className="text-slate-600 text-sm leading-relaxed">
+            The server is currently down or undergoing maintenance. 
+            Please try again in a few minutes. We apologize for any inconvenience.
+          </p>
+
+          <div className="bg-rose-50/50 rounded-2xl p-4 border border-rose-100/50 text-left">
+            <p className="text-xs font-bold text-rose-700 flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-pulse" />
+              سرور عارضی طور پر بند ہے
+            </p>
+            <p className="text-[11px] text-rose-600/80 mt-1 font-medium">
+              سسٹم کی دیکھ بھال جاری ہے، براہِ کرم تھوڑی دیر بعد دوبارہ کوشش کریں۔
+            </p>
+          </div>
+
+          <div className="pt-2">
+            <button
+              onClick={handleLogout}
+              className="w-full bg-slate-800 hover:bg-slate-900 text-white text-sm font-bold py-3 px-6 rounded-xl transition-all cursor-pointer shadow-md shadow-slate-200"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (loading) return (
@@ -3699,6 +3411,118 @@ export default function App() {
                       </Card>
                     </div>
 
+                    {/* Site Management & Target EP Calculator */}
+                    <Card className="border-indigo-100 bg-slate-50/40 mt-8">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between pb-3 border-b border-slate-200/80 gap-2">
+                        <div>
+                          <h4 className="font-bold flex items-center gap-2 text-indigo-950 text-sm md:text-base">
+                            <Target className="w-5 h-5 text-indigo-600" />
+                            Site Management & Target EP Requirement Calculator
+                          </h4>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Set persistent target EP pages and target days remaining to compute daily required EP with one-click apply
+                          </p>
+                        </div>
+                      </div>
+
+                      {calcMessage && (
+                        <div className={`mt-4 px-4 py-2.5 rounded-xl text-xs font-medium ${
+                          calcMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                        }`}>
+                          {calcMessage.text}
+                        </div>
+                      )}
+
+                      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        {sitesSummary.map((site) => {
+                          const accumulatedEP = site.extra_pages || 0;
+                          const targetEP = site.target_ep_pages || 0;
+                          const daysRemaining = site.target_days_remaining || 30;
+                          const epRemaining = Math.max(0, targetEP - accumulatedEP);
+                          const dailyEPRequired = (targetEP > 0 && daysRemaining > 0)
+                            ? Math.max(0, Math.ceil(epRemaining / daysRemaining))
+                            : 0;
+
+                          return (
+                            <div key={site.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between space-y-4">
+                              <div>
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
+                                  <span className="font-extrabold text-slate-900 text-base">{site.name}</span>
+                                  <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-full">
+                                    {site.unit || 'Files'}
+                                  </span>
+                                </div>
+
+                                <div className="space-y-2.5 text-xs">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-slate-500 font-medium">Accumulated EP:</span>
+                                    <span className="font-mono font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-100">
+                                      {accumulatedEP.toLocaleString()}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-slate-500 font-medium">Target EP Pages:</span>
+                                    <input
+                                      type="number"
+                                      defaultValue={site.target_ep_pages || 0}
+                                      onBlur={(e) => {
+                                        const val = parseInt(e.target.value) || 0;
+                                        updateSiteTargetEPSettings(site.id, val, site.target_days_remaining || 30);
+                                      }}
+                                      className="w-24 bg-slate-50 border border-slate-200 rounded px-2 py-1 text-right font-bold text-indigo-900 outline-none focus:ring-1 focus:ring-indigo-500 text-xs"
+                                      placeholder="0"
+                                    />
+                                  </div>
+
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-slate-500 font-medium">Target Days:</span>
+                                    <input
+                                      type="number"
+                                      defaultValue={site.target_days_remaining || 30}
+                                      onBlur={(e) => {
+                                        const val = parseInt(e.target.value) || 30;
+                                        updateSiteTargetEPSettings(site.id, site.target_ep_pages || 0, val);
+                                      }}
+                                      className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1 text-right font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 text-xs"
+                                      placeholder="30"
+                                    />
+                                  </div>
+
+                                  <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                                    <span className="text-slate-500 font-medium">EP Remaining:</span>
+                                    <span className="font-mono font-bold text-slate-800">
+                                      {epRemaining.toLocaleString()}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="mt-4 p-3 rounded-xl bg-indigo-50/80 border border-indigo-100 text-center">
+                                  <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Daily EP Required</span>
+                                  <span className="text-2xl font-black text-indigo-950 font-mono mt-0.5 block">
+                                    {dailyEPRequired.toLocaleString()}
+                                  </span>
+                                  <span className="text-[10px] text-indigo-500 font-medium block mt-0.5">
+                                    pages / day for {daysRemaining} days
+                                  </span>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                disabled={isApplyingCalcDailyEP}
+                                onClick={() => handleApplyCalculatedDailyEP(site.id, dailyEPRequired)}
+                                className="w-full bg-indigo-600 text-white py-2 px-3 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50 font-inherit"
+                              >
+                                <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+                                Apply {dailyEPRequired.toLocaleString()} as Default Daily EP
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </Card>
+
                     {/* Edit Specific Previous Dates Extra Pages */}
                     <Card className="border-indigo-150 bg-slate-50/50 mt-8">
                       <div>
@@ -3769,12 +3593,6 @@ export default function App() {
                         </div>
                       )}
                     </Card>
-
-                    <SiteEPTargetCalculator 
-                      sitesSummary={sitesSummary} 
-                      apiFetch={apiFetch} 
-                      onUpdateSuccess={() => { fetchSitesSummary(); fetchStats('main'); }} 
-                    />
                   </motion.div>
                 )}
 
@@ -3957,12 +3775,133 @@ export default function App() {
                       </div>
                     </Card>
 
-                    <RecordsEPSection 
-                      stats={stats} 
-                      selectedSiteId={selectedSiteId} 
-                      apiFetch={apiFetch} 
-                      sitesSummary={sitesSummary} 
-                    />
+                    {/* Month-wise EP Pages Breakdown Table */}
+                    <Card className="mt-6 border-slate-200 bg-white shadow-sm overflow-hidden">
+                      <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                        <div>
+                          <h4 className="font-bold flex items-center gap-2 text-slate-900 text-sm md:text-base">
+                            <CalendarIcon className="w-5 h-5 text-indigo-600" />
+                            Month-wise EP Pages Breakdown
+                          </h4>
+                          <p className="text-xs text-slate-400 mt-0.5">Regular scanned pages, extra pages (EP), total pages, and file counts per month</p>
+                        </div>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50/70 text-slate-500 font-semibold text-[10px] md:text-[11px] uppercase tracking-wider border-b border-slate-100">
+                              <th className="text-left px-4 py-3.5">Month</th>
+                              <th className="text-right px-4 py-3.5 text-indigo-600">Regular Pages</th>
+                              <th className="text-right px-4 py-3.5 text-orange-600 bg-orange-50/30">Extra Pages (EP)</th>
+                              <th className="text-right px-4 py-3.5 text-emerald-600 font-bold">Total Pages</th>
+                              <th className="text-right px-4 py-3.5">Files Scanned</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {stats?.monthly && stats.monthly.length > 0 ? (
+                              stats.monthly.map((m) => {
+                                const regular = m.regular_pages ?? Math.max(0, m.pages - (m.extra_pages || 0));
+                                const extra = m.extra_pages || 0;
+                                const total = m.pages;
+                                return (
+                                  <tr key={m.month} className="hover:bg-slate-50/50 transition-colors">
+                                    <td className="px-4 py-3.5 text-left font-bold text-slate-800 font-mono">{m.month}</td>
+                                    <td className="px-4 py-3.5 text-right font-mono text-indigo-900 font-semibold">{regular.toLocaleString()}</td>
+                                    <td className="px-4 py-3.5 text-right font-mono text-orange-600 font-bold bg-orange-50/10">{extra.toLocaleString()}</td>
+                                    <td className="px-4 py-3.5 text-right font-mono text-emerald-700 font-bold">{total.toLocaleString()}</td>
+                                    <td className="px-4 py-3.5 text-right font-mono text-slate-700 font-medium">{m.files.toLocaleString()}</td>
+                                  </tr>
+                                );
+                              })
+                            ) : (
+                              <tr>
+                                <td colSpan={5} className="px-4 py-8 text-center text-slate-400 italic">
+                                  No monthly data available yet
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                          {stats?.monthly && stats.monthly.length > 0 && (
+                            <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-900">
+                              <tr>
+                                <td className="px-4 py-4 text-left text-xs uppercase tracking-wider font-extrabold text-slate-800">GRAND TOTAL</td>
+                                <td className="px-4 py-4 text-right font-mono text-indigo-900">
+                                  {stats.monthly.reduce((sum, m) => sum + (m.regular_pages ?? Math.max(0, m.pages - (m.extra_pages || 0))), 0).toLocaleString()}
+                                </td>
+                                <td className="px-4 py-4 text-right font-mono text-orange-600 bg-orange-50/20">
+                                  {stats.monthly.reduce((sum, m) => sum + (m.extra_pages || 0), 0).toLocaleString()}
+                                </td>
+                                <td className="px-4 py-4 text-right font-mono text-emerald-700">
+                                  {stats.monthly.reduce((sum, m) => sum + m.pages, 0).toLocaleString()}
+                                </td>
+                                <td className="px-4 py-4 text-right font-mono text-slate-900">
+                                  {stats.monthly.reduce((sum, m) => sum + m.files, 0).toLocaleString()}
+                                </td>
+                              </tr>
+                            </tfoot>
+                          )}
+                        </table>
+                      </div>
+                    </Card>
+
+                    {/* Specific Date EP & Scanning Lookup */}
+                    <Card className="mt-6 border-indigo-150 bg-slate-50/50">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-slate-200/80 gap-4">
+                        <div>
+                          <h4 className="font-bold flex items-center gap-2 text-indigo-900 text-sm md:text-base">
+                            <Search className="w-5 h-5 text-indigo-600" />
+                            Specific Date EP Lookup
+                          </h4>
+                          <p className="text-xs text-slate-400 mt-0.5">Select any date to inspect regular pages, extra pages (EP), total pages, and files scanned</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="text-[11px] font-bold text-slate-500 uppercase">Select Date:</label>
+                          <input
+                            type="date"
+                            value={recordLookupDate}
+                            onChange={(e) => {
+                              setRecordLookupDate(e.target.value);
+                              fetchRecordLookupDate(selectedSiteId, e.target.value);
+                            }}
+                            className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="p-4 rounded-xl bg-white border border-indigo-100 shadow-sm">
+                          <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider block">Regular Scanned Pages</span>
+                          <span className="text-2xl font-black text-indigo-900 mt-1 block">
+                            {isFetchingRecordLookup ? '...' : (recordLookupResult?.regular_pages ?? 0).toLocaleString()}
+                          </span>
+                          <span className="text-[10px] text-slate-400 mt-0.5 block">Pages scanned on {recordLookupDate}</span>
+                        </div>
+
+                        <div className="p-4 rounded-xl bg-white border border-orange-100 shadow-sm">
+                          <span className="text-[10px] font-bold text-orange-600 uppercase tracking-wider block">Extra Pages (EP)</span>
+                          <span className="text-2xl font-black text-orange-600 mt-1 block">
+                            {isFetchingRecordLookup ? '...' : (recordLookupResult?.extra_pages ?? 0).toLocaleString()}
+                          </span>
+                          <span className="text-[10px] text-slate-400 mt-0.5 block">EP on {recordLookupDate}</span>
+                        </div>
+
+                        <div className="p-4 rounded-xl bg-white border border-emerald-100 shadow-sm">
+                          <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Total Pages</span>
+                          <span className="text-2xl font-black text-emerald-800 mt-1 block">
+                            {isFetchingRecordLookup ? '...' : (recordLookupResult?.total_pages ?? 0).toLocaleString()}
+                          </span>
+                          <span className="text-[10px] text-slate-400 mt-0.5 block">Regular + EP</span>
+                        </div>
+
+                        <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-sm">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Files Scanned</span>
+                          <span className="text-2xl font-black text-slate-800 mt-1 block">
+                            {isFetchingRecordLookup ? '...' : (recordLookupResult?.files ?? 0).toLocaleString()}
+                          </span>
+                          <span className="text-[10px] text-slate-400 mt-0.5 block">Files scanned on {recordLookupDate}</span>
+                        </div>
+                      </div>
+                    </Card>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -4016,12 +3955,133 @@ export default function App() {
                 </div>
               </Card>
 
-              <RecordsEPSection 
-                stats={stats} 
-                selectedSiteId={selectedSiteId} 
-                apiFetch={apiFetch} 
-                sitesSummary={sitesSummary} 
-              />
+              {/* Month-wise EP Pages Breakdown Table */}
+              <Card className="mt-6 border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold flex items-center gap-2 text-slate-900 text-sm md:text-base">
+                      <CalendarIcon className="w-5 h-5 text-indigo-600" />
+                      Month-wise EP Pages Breakdown
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-0.5">Regular scanned pages, extra pages (EP), total pages, and file counts per month</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/70 text-slate-500 font-semibold text-[10px] md:text-[11px] uppercase tracking-wider border-b border-slate-100">
+                        <th className="text-left px-4 py-3.5">Month</th>
+                        <th className="text-right px-4 py-3.5 text-indigo-600">Regular Pages</th>
+                        <th className="text-right px-4 py-3.5 text-orange-600 bg-orange-50/30">Extra Pages (EP)</th>
+                        <th className="text-right px-4 py-3.5 text-emerald-600 font-bold">Total Pages</th>
+                        <th className="text-right px-4 py-3.5">Files Scanned</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {stats?.monthly && stats.monthly.length > 0 ? (
+                        stats.monthly.map((m) => {
+                          const regular = m.regular_pages ?? Math.max(0, m.pages - (m.extra_pages || 0));
+                          const extra = m.extra_pages || 0;
+                          const total = m.pages;
+                          return (
+                            <tr key={m.month} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-4 py-3.5 text-left font-bold text-slate-800 font-mono">{m.month}</td>
+                              <td className="px-4 py-3.5 text-right font-mono text-indigo-900 font-semibold">{regular.toLocaleString()}</td>
+                              <td className="px-4 py-3.5 text-right font-mono text-orange-600 font-bold bg-orange-50/10">{extra.toLocaleString()}</td>
+                              <td className="px-4 py-3.5 text-right font-mono text-emerald-700 font-bold">{total.toLocaleString()}</td>
+                              <td className="px-4 py-3.5 text-right font-mono text-slate-700 font-medium">{m.files.toLocaleString()}</td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-8 text-center text-slate-400 italic">
+                            No monthly data available yet
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    {stats?.monthly && stats.monthly.length > 0 && (
+                      <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-900">
+                        <tr>
+                          <td className="px-4 py-4 text-left text-xs uppercase tracking-wider font-extrabold text-slate-800">GRAND TOTAL</td>
+                          <td className="px-4 py-4 text-right font-mono text-indigo-900">
+                            {stats.monthly.reduce((sum, m) => sum + (m.regular_pages ?? Math.max(0, m.pages - (m.extra_pages || 0))), 0).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-4 text-right font-mono text-orange-600 bg-orange-50/20">
+                            {stats.monthly.reduce((sum, m) => sum + (m.extra_pages || 0), 0).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-4 text-right font-mono text-emerald-700">
+                            {stats.monthly.reduce((sum, m) => sum + m.pages, 0).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-4 text-right font-mono text-slate-900">
+                            {stats.monthly.reduce((sum, m) => sum + m.files, 0).toLocaleString()}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </Card>
+
+              {/* Specific Date EP & Scanning Lookup */}
+              <Card className="mt-6 border-indigo-150 bg-slate-50/50">
+                <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-slate-200/80 gap-4">
+                  <div>
+                    <h4 className="font-bold flex items-center gap-2 text-indigo-900 text-sm md:text-base">
+                      <Search className="w-5 h-5 text-indigo-600" />
+                      Specific Date EP Lookup
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-0.5">Select any date to inspect regular pages, extra pages (EP), total pages, and files scanned</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase">Select Date:</label>
+                    <input
+                      type="date"
+                      value={recordLookupDate}
+                      onChange={(e) => {
+                        setRecordLookupDate(e.target.value);
+                        fetchRecordLookupDate(selectedSiteId, e.target.value);
+                      }}
+                      className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="p-4 rounded-xl bg-white border border-indigo-100 shadow-sm">
+                    <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider block">Regular Scanned Pages</span>
+                    <span className="text-2xl font-black text-indigo-900 mt-1 block">
+                      {isFetchingRecordLookup ? '...' : (recordLookupResult?.regular_pages ?? 0).toLocaleString()}
+                    </span>
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">Pages scanned on {recordLookupDate}</span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-white border border-orange-100 shadow-sm">
+                    <span className="text-[10px] font-bold text-orange-600 uppercase tracking-wider block">Extra Pages (EP)</span>
+                    <span className="text-2xl font-black text-orange-600 mt-1 block">
+                      {isFetchingRecordLookup ? '...' : (recordLookupResult?.extra_pages ?? 0).toLocaleString()}
+                    </span>
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">EP on {recordLookupDate}</span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-white border border-emerald-100 shadow-sm">
+                    <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Total Pages</span>
+                    <span className="text-2xl font-black text-emerald-800 mt-1 block">
+                      {isFetchingRecordLookup ? '...' : (recordLookupResult?.total_pages ?? 0).toLocaleString()}
+                    </span>
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">Regular + EP</span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-sm">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Files Scanned</span>
+                    <span className="text-2xl font-black text-slate-800 mt-1 block">
+                      {isFetchingRecordLookup ? '...' : (recordLookupResult?.files ?? 0).toLocaleString()}
+                    </span>
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">Files scanned on {recordLookupDate}</span>
+                  </div>
+                </div>
+              </Card>
             </motion.div>
           ) : view === 'admin-management' && hasPermission('admin-management') ? (
             <motion.div 
@@ -4329,14 +4389,6 @@ export default function App() {
                       )}
                     </div>
                   </Card>
-
-                  <div className="col-span-full">
-                    <SiteEPTargetCalculator 
-                      sitesSummary={sitesSummary} 
-                      apiFetch={apiFetch} 
-                      onUpdateSuccess={() => { fetchSitesSummary(); fetchStats('main'); }} 
-                    />
-                  </div>
                 </div>
               </div>
             </motion.div>

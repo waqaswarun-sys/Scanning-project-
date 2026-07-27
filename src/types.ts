@@ -3,9 +3,16 @@ export interface Site {
   name: string;
   target_files: number;
   target_ep_pages?: number;
+  target_days_remaining?: number;
+  default_extra_pages?: number;
   link?: string;
   mouza_entry_link?: string;
   total_mouza_scanned?: number;
+  rate?: number;
+  unit?: string;
+  extra_pages?: number;
+  total_files?: number;
+  total_pages?: number;
 }
 
 export interface Employee {
@@ -47,11 +54,14 @@ export interface Stats {
     total_pages: number | null;
     target_files: number;
     total_mouza_scanned?: number;
+    unit?: string;
+    rate?: number;
   };
   monthly: Array<{
     month: string;
     files: number;
     pages: number;
+    regular_pages?: number;
     extra_pages: number;
   }>;
   weekly: Array<{

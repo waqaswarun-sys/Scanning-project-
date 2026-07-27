@@ -49,45 +49,18 @@ import { Site, Employee, ScanningData, Stats } from './src/types.ts';
 import firebaseConfig from './firebase-applet-config.json';
 
 if (!getApps().length) {
-  let serviceAccount: any = {};
-  
-  if (process.env.FIREBASE_SERVICE_ACCOUNT && process.env.FIREBASE_SERVICE_ACCOUNT !== '{}') {
-    try {
-      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    } catch (e) {
-      console.warn("Failed to parse FIREBASE_SERVICE_ACCOUNT env var, falling back:", e);
-      serviceAccount = firebaseConfig;
-    }
-  } else {
-    serviceAccount = firebaseConfig;
-  }
-
-  if (serviceAccount && serviceAccount.private_key) {
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+  if (serviceAccount.private_key) {
     serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
   }
-
   initializeApp({
     credential: cert(serviceAccount),
-    projectId: serviceAccount.project_id || firebaseConfig.project_id,
+    projectId: firebaseConfig.project_id,
   });
 }
 
 const db = getFirestore();
-
-let resend: any;
-if (process.env.RESEND_API_KEY) {
-  resend = new Resend(process.env.RESEND_API_KEY);
-} else {
-  console.warn("RESEND_API_KEY is missing. Email features will be mocked.");
-  resend = {
-    emails: {
-      send: async (data: any) => {
-        console.log("[MOCK EMAIL] RESEND_API_KEY is not configured. Would send email:", data);
-        return { id: "mock_id", error: null, data: null };
-      }
-    }
-  };
-}
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 
 // Seed default admin if not exists
@@ -603,7 +576,7 @@ setInterval(async () => {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Compression - responses 70% smaller
   app.use(compression());
@@ -1024,6 +997,40 @@ async function startServer() {
     }
   });
 
+  // Maintenance Mode Routes
+  app.get("/api/maintenance-status", async (req: any, res: any) => {
+    try {
+      const doc = await db.collection('settings').doc('maintenance').get();
+      if (doc.exists) {
+        res.json({ enabled: !!doc.data()?.enabled });
+      } else {
+        res.json({ enabled: false });
+      }
+    } catch (err) {
+      console.error('[MAINTENANCE] Fetch error:', err);
+      res.json({ enabled: false });
+    }
+  });
+
+  app.post("/api/maintenance-status", requireAuth, async (req: any, res: any) => {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    try {
+      const { enabled } = req.body;
+      await db.collection('settings').doc('maintenance').set({
+        enabled: !!enabled,
+        updated_by: req.user.username,
+        updated_at: FieldValue.serverTimestamp()
+      }, { merge: true });
+      console.log(`[MAINTENANCE] Updated to: ${enabled} by ${req.user.username}`);
+      res.json({ success: true, enabled: !!enabled });
+    } catch (err) {
+      console.error('[MAINTENANCE] Update error:', err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // User Management Routes
   app.get("/api/users", requireAuth, async (req: any, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
@@ -1199,6 +1206,7 @@ async function startServer() {
           extra_pages: extraPages,
           default_extra_pages: siteData.default_extra_pages || 0,
           target_ep_pages: siteData.target_ep_pages || 0,
+          target_days_remaining: siteData.target_days_remaining || 30,
           rate: siteData.rate || 0.3,
           unit: siteData.unit || 'Files',
           total_mouza_scanned: siteData.total_mouza_scanned || 0,
@@ -1767,6 +1775,7 @@ async function startServer() {
         .map(m => ({
           month: m.month,
           files: m.files,
+          regular_pages: m.personal_pages,
           pages: mode === 'main' ? (m.personal_pages + m.extra_pages) : m.personal_pages,
           extra_pages: m.extra_pages
         }))
@@ -2287,13 +2296,14 @@ async function startServer() {
     if (!checkSiteAccess(req.user, req.params.id, 'admin-sites')) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    const { target_files, target_ep_pages, rate, unit, total_mouza_scanned, default_extra_pages, link, mouza_entry_link } = req.body;
+    const { target_files, target_ep_pages, target_days_remaining, rate, unit, total_mouza_scanned, default_extra_pages, link, mouza_entry_link } = req.body;
     try {
       const updateData: any = {
         updated_at: FieldValue.serverTimestamp()
       };
       if (target_files !== undefined) updateData.target_files = Number(target_files);
       if (target_ep_pages !== undefined) updateData.target_ep_pages = Number(target_ep_pages);
+      if (target_days_remaining !== undefined) updateData.target_days_remaining = Number(target_days_remaining);
       if (rate !== undefined) updateData.rate = Number(rate);
       if (unit !== undefined) updateData.unit = String(unit);
       if (total_mouza_scanned !== undefined) updateData.total_mouza_scanned = Number(total_mouza_scanned);
@@ -2324,6 +2334,51 @@ async function startServer() {
     } catch (err) {
       console.error("Site update error:", err);
       res.status(500).json({ error: "Failed to update site" });
+    }
+  });
+
+  // Specific Date EP & Scanning Lookup
+  app.get("/api/sites/:siteId/date-lookup", requireAuth, async (req: any, res) => {
+    const { siteId } = req.params;
+    const { date } = req.query;
+    if (!siteId || !date) {
+      return res.status(400).json({ error: "siteId and date are required" });
+    }
+    try {
+      const scanningSnapshot = await db.collection('scanning_data')
+        .where('site_id', '==', String(siteId))
+        .where('date', '==', String(date))
+        .get();
+
+      let regularPages = 0;
+      let files = 0;
+      scanningSnapshot.docs.forEach(doc => {
+        const d = doc.data();
+        regularPages += (d.pages || 0);
+        files += (d.files || 0);
+      });
+
+      const extraDocId = `${siteId}_${date}`;
+      const extraDoc = await db.collection('daily_extra_pages').doc(extraDocId).get();
+      let extraPages = 0;
+      if (extraDoc.exists) {
+        extraPages = extraDoc.data()?.extra_pages || 0;
+      } else {
+        const siteDoc = await db.collection('sites').doc(siteId).get();
+        extraPages = siteDoc.exists ? (siteDoc.data()?.default_extra_pages || 0) : 0;
+      }
+
+      res.json({
+        site_id: siteId,
+        date: String(date),
+        files,
+        regular_pages: regularPages,
+        extra_pages: extraPages,
+        total_pages: regularPages + extraPages
+      });
+    } catch (err) {
+      console.error('[DATE-LOOKUP] Error:', err);
+      res.status(500).json({ error: "Failed to fetch date lookup" });
     }
   });
 
@@ -2376,7 +2431,7 @@ async function startServer() {
 
   app.post("/api/sites", requireAuth, async (req: any, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
-    const { name, target_files, target_ep_pages, rate, unit, total_mouza_scanned, default_extra_pages, link, mouza_entry_link } = req.body;
+    const { name, target_files, target_ep_pages, target_days_remaining, rate, unit, total_mouza_scanned, default_extra_pages, link, mouza_entry_link } = req.body;
     
     if (!name || typeof name !== 'string' || name.length < 2 || name.length > 50) {
       return res.status(400).json({ error: "Site name must be between 2 and 50 characters" });
@@ -2387,6 +2442,7 @@ async function startServer() {
         name,
         target_files: target_files || 0,
         target_ep_pages: target_ep_pages || 0,
+        target_days_remaining: target_days_remaining || 30,
         total_mouza_scanned: total_mouza_scanned || 0,
         rate: rate || 0.3,
         unit: unit || 'Files',
@@ -2396,7 +2452,7 @@ async function startServer() {
         created_at: FieldValue.serverTimestamp()
       });
       clearCache('sites-summary');
-      res.json({ id: docRef.id, name, target_files, target_ep_pages: target_ep_pages || 0, total_mouza_scanned: total_mouza_scanned || 0, rate: rate || 0.3, unit: unit || 'Files', default_extra_pages: default_extra_pages || 0, link: link || '', mouza_entry_link: mouza_entry_link || '' });
+      res.json({ id: docRef.id, name, target_files, target_ep_pages: target_ep_pages || 0, target_days_remaining: target_days_remaining || 30, total_mouza_scanned: total_mouza_scanned || 0, rate: rate || 0.3, unit: unit || 'Files', default_extra_pages: default_extra_pages || 0, link: link || '', mouza_entry_link: mouza_entry_link || '' });
     } catch (err) {
       console.error("Site create error:", err);
       res.status(500).json({ error: "Failed to create site" });
