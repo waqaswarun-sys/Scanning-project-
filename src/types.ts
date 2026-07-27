@@ -2,6 +2,7 @@ export interface Site {
   id: string | number;
   name: string;
   target_files: number;
+  target_ep_pages?: number;
   link?: string;
   mouza_entry_link?: string;
   total_mouza_scanned?: number;
