@@ -1528,6 +1528,8 @@ async function startServer() {
           total_pages: scanning.pages + extraPages,
           extra_pages: extraPages,
           default_extra_pages: siteData.default_extra_pages || 0,
+          target_ep_pages: siteData.target_ep_pages || 0,
+          target_days_remaining: siteData.target_days_remaining || 30,
           rate: siteData.rate || 0.3,
           unit: siteData.unit || 'Files',
           total_mouza_scanned: siteData.total_mouza_scanned || 0,
@@ -2616,7 +2618,7 @@ async function startServer() {
     if (!checkSiteAccess(req.user, req.params.id, 'admin-sites')) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    const { target_files, rate, unit, total_mouza_scanned, default_extra_pages, link, mouza_entry_link } = req.body;
+    const { target_files, rate, unit, total_mouza_scanned, default_extra_pages, link, mouza_entry_link, target_ep_pages, target_days_remaining } = req.body;
     try {
       const updateData: any = {
         updated_at: FieldValue.serverTimestamp()
@@ -2626,6 +2628,8 @@ async function startServer() {
       if (unit !== undefined) updateData.unit = String(unit);
       if (total_mouza_scanned !== undefined) updateData.total_mouza_scanned = Number(total_mouza_scanned);
       if (default_extra_pages !== undefined) updateData.default_extra_pages = Number(default_extra_pages);
+      if (target_ep_pages !== undefined) updateData.target_ep_pages = Number(target_ep_pages);
+      if (target_days_remaining !== undefined) updateData.target_days_remaining = Number(target_days_remaining);
       if (link !== undefined) updateData.link = String(link);
       if (mouza_entry_link !== undefined) updateData.mouza_entry_link = String(mouza_entry_link);
 
@@ -2678,6 +2682,51 @@ async function startServer() {
     }
   });
 
+  app.get("/api/sites/:siteId/date-lookup", requireAuth, async (req: any, res) => {
+    const { siteId } = req.params;
+    const { date } = req.query;
+    if (!siteId || !date) {
+      return res.status(400).json({ error: "siteId and date are required" });
+    }
+    try {
+      const scanningSnapshot = await db.collection('scanning_data')
+        .where('site_id', '==', siteId)
+        .where('date', '==', String(date))
+        .get();
+      
+      let regularPages = 0;
+      let files = 0;
+      scanningSnapshot.docs.forEach(doc => {
+        const d = doc.data();
+        regularPages += (d.pages || 0);
+        files += (d.files || 0);
+      });
+
+      const extraDocId = `${siteId}_${date}`;
+      const extraDoc = await db.collection('daily_extra_pages').doc(extraDocId).get();
+      let extraPages = 0;
+      if (extraDoc.exists) {
+        extraPages = extraDoc.data()?.extra_pages || 0;
+      } else {
+        const siteDoc = await db.collection('sites').doc(siteId).get();
+        if (siteDoc.exists) {
+          extraPages = siteDoc.data()?.default_extra_pages || 0;
+        }
+      }
+
+      res.json({
+        date: String(date),
+        regular_pages: regularPages,
+        extra_pages: extraPages,
+        total_pages: regularPages + extraPages,
+        files
+      });
+    } catch (err) {
+      console.error('[DATE-LOOKUP] Error:', err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.post("/api/sites/:siteId/daily-extra-pages", requireAuth, async (req: any, res) => {
     const { siteId } = req.params;
     const { date, extra_pages } = req.body;
@@ -2704,7 +2753,7 @@ async function startServer() {
 
   app.post("/api/sites", requireAuth, async (req: any, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
-    const { name, target_files, rate, unit, total_mouza_scanned, default_extra_pages, link, mouza_entry_link } = req.body;
+    const { name, target_files, rate, unit, total_mouza_scanned, default_extra_pages, target_ep_pages, target_days_remaining, link, mouza_entry_link } = req.body;
     
     if (!name || typeof name !== 'string' || name.length < 2 || name.length > 50) {
       return res.status(400).json({ error: "Site name must be between 2 and 50 characters" });
@@ -2718,12 +2767,26 @@ async function startServer() {
         rate: rate || 0.3,
         unit: unit || 'Files',
         default_extra_pages: default_extra_pages || 0,
+        target_ep_pages: Number(target_ep_pages || 0),
+        target_days_remaining: Number(target_days_remaining || 30),
         link: link || '',
         mouza_entry_link: mouza_entry_link || '',
         created_at: FieldValue.serverTimestamp()
       });
       clearCache('sites-summary');
-      res.json({ id: docRef.id, name, target_files, total_mouza_scanned: total_mouza_scanned || 0, rate: rate || 0.3, unit: unit || 'Files', default_extra_pages: default_extra_pages || 0, link: link || '', mouza_entry_link: mouza_entry_link || '' });
+      res.json({ 
+        id: docRef.id, 
+        name, 
+        target_files, 
+        total_mouza_scanned: total_mouza_scanned || 0, 
+        rate: rate || 0.3, 
+        unit: unit || 'Files', 
+        default_extra_pages: default_extra_pages || 0,
+        target_ep_pages: Number(target_ep_pages || 0),
+        target_days_remaining: Number(target_days_remaining || 30),
+        link: link || '', 
+        mouza_entry_link: mouza_entry_link || '' 
+      });
     } catch (err) {
       console.error("Site create error:", err);
       res.status(500).json({ error: "Failed to create site" });
