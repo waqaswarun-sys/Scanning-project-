@@ -3113,6 +3113,44 @@ async function startServer() {
   });
 
   // Apps Management Routes
+  // Fetch a PUBLISHED (public) Google Sheet as CSV on the server side.
+  // Doing it here (not in the browser) avoids cross-origin blocking, and we
+  // only allow docs.google.com links so this can't be used as an open proxy.
+  app.get("/api/sheets/fetch-csv", requireAuth, async (req: any, res) => {
+    try {
+      const raw = String(req.query.url || '').trim();
+      if (!raw) return res.status(400).json({ error: "Missing sheet URL." });
+
+      let target: URL;
+      try { target = new URL(raw); } catch { return res.status(400).json({ error: "That doesn't look like a valid link." }); }
+
+      if (target.hostname !== 'docs.google.com' || !target.pathname.includes('/spreadsheets/')) {
+        return res.status(400).json({ error: "Only published Google Sheets links are allowed." });
+      }
+
+      // Normalise a "Publish to web" link to its CSV output.
+      if (target.pathname.endsWith('/pubhtml')) {
+        target.pathname = target.pathname.replace(/\/pubhtml$/, '/pub');
+      }
+      target.searchParams.set('output', 'csv');
+      if (!target.searchParams.get('single')) target.searchParams.set('single', 'true');
+
+      const r = await fetch(target.toString(), { redirect: 'follow' });
+      if (!r.ok) {
+        return res.status(502).json({ error: `Google returned ${r.status}. Make sure the sheet is Published to the web.` });
+      }
+      const text = await r.text();
+      const head = text.trimStart().toLowerCase();
+      if (head.startsWith('<!doctype html') || head.startsWith('<html')) {
+        return res.status(502).json({ error: "That link returned a web page, not CSV. Re-publish the sheet choosing 'Comma-separated values (.csv)'." });
+      }
+      res.type('text/csv').send(text);
+    } catch (err: any) {
+      console.error('[SHEETS-CSV] Error:', err?.message || err);
+      res.status(500).json({ error: "Failed to fetch the published sheet." });
+    }
+  });
+
   app.get("/api/apps", async (req: any, res) => {
     try {
       const appsSnapshot = await db.collection('apps').get();
