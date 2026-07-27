@@ -49,19 +49,359 @@ import { Site, Employee, ScanningData, Stats } from './src/types.ts';
 import firebaseConfig from './firebase-applet-config.json';
 
 if (!getApps().length) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
-  if (serviceAccount.private_key) {
-    serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+  let serviceAccount: any = null;
+  try {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      if (serviceAccount && serviceAccount.private_key) {
+        serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+      }
+    }
+  } catch (e) {
+    console.error('[FIREBASE] Failed to parse FIREBASE_SERVICE_ACCOUNT:', e);
   }
-  initializeApp({
-    credential: cert(serviceAccount),
-    projectId: firebaseConfig.project_id,
-  });
+
+  if (serviceAccount && serviceAccount.project_id && serviceAccount.private_key) {
+    initializeApp({
+      credential: cert(serviceAccount),
+      projectId: firebaseConfig.projectId || serviceAccount.project_id,
+    });
+  } else {
+    initializeApp({
+      projectId: firebaseConfig.projectId,
+    });
+  }
 }
 
-const db = getFirestore();
-const resend = new Resend(process.env.RESEND_API_KEY);
+const rawFirestoreDb = getFirestore();
+const resend = new Resend(process.env.RESEND_API_KEY || 're_dummy_key');
 
+// Local persistent storage fallback when Firestore is unavailable
+const DATA_DIR = path.join(process.cwd(), 'data');
+const DATA_FILE = path.join(DATA_DIR, 'db.json');
+
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+let memoryStore: Record<string, Record<string, any>> = {};
+
+function loadStore() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      memoryStore = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+    }
+  } catch (e) {
+    console.error('[DB-FALLBACK] Failed to load local db file:', e);
+  }
+}
+
+function saveStore() {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(memoryStore, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('[DB-FALLBACK] Failed to save local db file:', e);
+  }
+}
+
+loadStore();
+
+function generateId() {
+  return Math.random().toString(36).substring(2, 11) + Math.random().toString(36).substring(2, 11);
+}
+
+function processFieldValue(val: any) {
+  if (val && typeof val === 'object') {
+    if (val._methodName === 'serverTimestamp' || val.constructor?.name === 'FieldValue') {
+      return new Date().toISOString();
+    }
+  }
+  return val;
+}
+
+function normalizeVal(v: any) {
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === 'string' && !isNaN(Date.parse(v)) && (v.includes('-') || v.includes('T'))) {
+    return new Date(v).getTime();
+  }
+  return v;
+}
+
+class MemoryDocRef {
+  constructor(public collectionName: string, public id: string) {}
+
+  async get() {
+    const col = memoryStore[this.collectionName] || {};
+    const docData = col[this.id];
+    return {
+      id: this.id,
+      exists: docData !== undefined,
+      data: () => (docData ? JSON.parse(JSON.stringify(docData)) : undefined),
+      ref: this,
+    };
+  }
+
+  async set(data: any, options?: { merge?: boolean }) {
+    if (!memoryStore[this.collectionName]) {
+      memoryStore[this.collectionName] = {};
+    }
+    let processed: any = {};
+    for (const [k, v] of Object.entries(data)) {
+      processed[k] = processFieldValue(v);
+    }
+
+    if (options?.merge && memoryStore[this.collectionName][this.id]) {
+      memoryStore[this.collectionName][this.id] = {
+        ...memoryStore[this.collectionName][this.id],
+        ...processed,
+      };
+    } else {
+      memoryStore[this.collectionName][this.id] = processed;
+    }
+    saveStore();
+    return { id: this.id };
+  }
+
+  async update(data: any) {
+    if (!memoryStore[this.collectionName]) {
+      memoryStore[this.collectionName] = {};
+    }
+    const existing = memoryStore[this.collectionName][this.id] || {};
+    let processed: any = {};
+    for (const [k, v] of Object.entries(data)) {
+      processed[k] = processFieldValue(v);
+    }
+    memoryStore[this.collectionName][this.id] = {
+      ...existing,
+      ...processed,
+    };
+    saveStore();
+  }
+
+  async delete() {
+    if (memoryStore[this.collectionName] && memoryStore[this.collectionName][this.id]) {
+      delete memoryStore[this.collectionName][this.id];
+      saveStore();
+    }
+  }
+}
+
+class MemoryQuery {
+  constructor(
+    public collectionName: string,
+    public filters: Array<{ field: string; op: string; val: any }> = [],
+    public limitNum?: number,
+    public orderByField?: string,
+    public orderDir: 'asc' | 'desc' = 'asc'
+  ) {}
+
+  where(field: string, op: string, val: any) {
+    return new MemoryQuery(
+      this.collectionName,
+      [...this.filters, { field, op, val }],
+      this.limitNum,
+      this.orderByField,
+      this.orderDir
+    );
+  }
+
+  limit(n: number) {
+    return new MemoryQuery(
+      this.collectionName,
+      this.filters,
+      n,
+      this.orderByField,
+      this.orderDir
+    );
+  }
+
+  orderBy(field: string, dir: 'asc' | 'desc' = 'asc') {
+    return new MemoryQuery(
+      this.collectionName,
+      this.filters,
+      this.limitNum,
+      field,
+      dir
+    );
+  }
+
+  async get() {
+    const col = memoryStore[this.collectionName] || {};
+    let docs = Object.entries(col).map(([id, data]) => ({
+      id,
+      data: JSON.parse(JSON.stringify(data)),
+    }));
+
+    // Apply filters
+    for (const { field, op, val } of this.filters) {
+      docs = docs.filter(item => {
+        let itemVal = item.data[field];
+        let normItem = normalizeVal(itemVal);
+        let normTarget = normalizeVal(val);
+
+        if (op === '==') return itemVal === val || normItem === normTarget;
+        if (op === '!=') return itemVal !== val && normItem !== normTarget;
+        if (op === '<') return normItem < normTarget;
+        if (op === '<=') return normItem <= normTarget;
+        if (op === '>') return normItem > normTarget;
+        if (op === '>=') return normItem >= normTarget;
+        if (op === 'in') return Array.isArray(val) && (val.includes(itemVal) || val.map(normalizeVal).includes(normItem));
+        if (op === 'array-contains') return Array.isArray(itemVal) && itemVal.includes(val);
+        return true;
+      });
+    }
+
+    // Apply orderBy
+    if (this.orderByField) {
+      const field = this.orderByField;
+      const dirMult = this.orderDir === 'desc' ? -1 : 1;
+      docs.sort((a, b) => {
+        const valA = normalizeVal(a.data[field]);
+        const valB = normalizeVal(b.data[field]);
+        if (valA < valB) return -1 * dirMult;
+        if (valA > valB) return 1 * dirMult;
+        return 0;
+      });
+    }
+
+    // Apply limit
+    if (this.limitNum !== undefined) {
+      docs = docs.slice(0, this.limitNum);
+    }
+
+    const docSnapshots = docs.map(d => ({
+      id: d.id,
+      exists: true,
+      data: () => d.data,
+      ref: new MemoryDocRef(this.collectionName, d.id),
+    }));
+
+    return {
+      empty: docSnapshots.length === 0,
+      size: docSnapshots.length,
+      docs: docSnapshots,
+      forEach: (cb: (doc: any) => void) => docSnapshots.forEach(cb),
+    };
+  }
+}
+
+class MemoryCollection {
+  constructor(public name: string) {}
+
+  doc(id?: string) {
+    const docId = id || generateId();
+    return new MemoryDocRef(this.name, docId);
+  }
+
+  async add(data: any) {
+    const id = generateId();
+    const docRef = new MemoryDocRef(this.name, id);
+    await docRef.set(data);
+    return docRef;
+  }
+
+  where(field: string, op: string, val: any) {
+    return new MemoryQuery(this.name, [{ field, op, val }]);
+  }
+
+  limit(n: number) {
+    return new MemoryQuery(this.name, [], n);
+  }
+
+  orderBy(field: string, dir: 'asc' | 'desc' = 'asc') {
+    return new MemoryQuery(this.name, [], undefined, field, dir);
+  }
+
+  async get() {
+    return new MemoryQuery(this.name).get();
+  }
+}
+
+class MemoryBatch {
+  private ops: Array<() => Promise<void>> = [];
+
+  delete(ref: any) {
+    this.ops.push(() => ref.delete());
+    return this;
+  }
+
+  set(ref: any, data: any, options?: any) {
+    this.ops.push(() => ref.set(data, options));
+    return this;
+  }
+
+  update(ref: any, data: any) {
+    this.ops.push(() => ref.update(data));
+    return this;
+  }
+
+  async commit() {
+    for (const op of this.ops) {
+      await op();
+    }
+  }
+}
+
+class MemoryDb {
+  collection(name: string) {
+    return new MemoryCollection(name);
+  }
+  batch() {
+    return new MemoryBatch();
+  }
+}
+
+let useMemoryDb = false;
+const memoryDbInstance = new MemoryDb();
+
+const db = {
+  collection(name: string): any {
+    if (useMemoryDb) {
+      return memoryDbInstance.collection(name);
+    }
+    const realCol = rawFirestoreDb.collection(name);
+    return new Proxy(realCol, {
+      get(target: any, prop: string) {
+        if (useMemoryDb) return (memoryDbInstance.collection(name) as any)[prop];
+        const orig = target[prop];
+        if (typeof orig === 'function') {
+          return function (...args: any[]) {
+            try {
+              const res = orig.apply(target, args);
+              if (res && typeof res.catch === 'function') {
+                return res.catch((err: any) => {
+                  console.warn(`[DB-FALLBACK] Firestore error on collection(${name}).${prop}, switching to local store:`, err?.message || err);
+                  useMemoryDb = true;
+                  return (memoryDbInstance.collection(name) as any)[prop](...args);
+                });
+              }
+              return res;
+            } catch (err: any) {
+              console.warn(`[DB-FALLBACK] Firestore exception on collection(${name}).${prop}, switching to local store:`, err?.message || err);
+              useMemoryDb = true;
+              return (memoryDbInstance.collection(name) as any)[prop](...args);
+            }
+          };
+        }
+        return orig;
+      }
+    });
+  },
+  batch(): any {
+    if (useMemoryDb) return memoryDbInstance.batch();
+    return rawFirestoreDb.batch();
+  }
+};
+
+async function testDatabaseConnection() {
+  try {
+    await rawFirestoreDb.collection('_test_conn').limit(1).get();
+    console.log('[FIREBASE] Connected to Firestore successfully.');
+  } catch (err: any) {
+    console.warn('[FIREBASE] Firestore database not available, using local persistent JSON store:', err?.message || err);
+    useMemoryDb = true;
+  }
+}
 
 // Seed default admin if not exists
 async function seedData() {
@@ -106,7 +446,12 @@ async function seedData() {
   }
 }
 
-seedData().catch(console.error);
+async function initServerDatabase() {
+  await testDatabaseConnection();
+  await seedData();
+}
+
+initServerDatabase().catch(console.error);
 
 // Clean up expired tokens — runs every 6 hours
 async function cleanupExpiredTokens() {
@@ -576,7 +921,7 @@ setInterval(async () => {
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = 3000;
 
   // Compression - responses 70% smaller
   app.use(compression());
@@ -628,9 +973,12 @@ async function startServer() {
         
         if (tokenSnapshot.exists) {
           const tokenData = tokenSnapshot.data();
+          const expiresAt = tokenData?.expires_at
+            ? (typeof tokenData.expires_at.toDate === 'function' ? tokenData.expires_at.toDate() : new Date(tokenData.expires_at))
+            : null;
 
           // Check token expiry
-          if (tokenData?.expires_at && tokenData.expires_at.toDate() < new Date()) {
+          if (expiresAt && expiresAt.getTime() < Date.now()) {
             console.log(`[AUTH] Token expired, deleting...`);
             await db.collection('user_tokens').doc(token).delete();
           } else {
@@ -761,7 +1109,15 @@ async function startServer() {
         const tokenSnapshot = await db.collection('user_tokens').doc(token).get();
         if (tokenSnapshot.exists) {
           const tokenData = tokenSnapshot.data();
-          const userSnapshot = await db.collection('users').doc(tokenData?.user_id).get();
+          const expiresAt = tokenData?.expires_at
+            ? (typeof tokenData.expires_at.toDate === 'function' ? tokenData.expires_at.toDate() : new Date(tokenData.expires_at))
+            : null;
+
+          if (expiresAt && expiresAt.getTime() < Date.now()) {
+            console.log(`[AUTH] /api/me Token expired, deleting...`);
+            await db.collection('user_tokens').doc(token).delete();
+          } else {
+            const userSnapshot = await db.collection('users').doc(tokenData?.user_id).get();
           
           if (userSnapshot.exists) {
               const user = userSnapshot.data();
@@ -793,6 +1149,7 @@ async function startServer() {
           }
         }
       }
+    }
       
       if (req.session && req.session.user) {
         // Refresh user data from DB to ensure it's up to date
@@ -997,40 +1354,6 @@ async function startServer() {
     }
   });
 
-  // Maintenance Mode Routes
-  app.get("/api/maintenance-status", async (req: any, res: any) => {
-    try {
-      const doc = await db.collection('settings').doc('maintenance').get();
-      if (doc.exists) {
-        res.json({ enabled: !!doc.data()?.enabled });
-      } else {
-        res.json({ enabled: false });
-      }
-    } catch (err) {
-      console.error('[MAINTENANCE] Fetch error:', err);
-      res.json({ enabled: false });
-    }
-  });
-
-  app.post("/api/maintenance-status", requireAuth, async (req: any, res: any) => {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: "Forbidden" });
-    }
-    try {
-      const { enabled } = req.body;
-      await db.collection('settings').doc('maintenance').set({
-        enabled: !!enabled,
-        updated_by: req.user.username,
-        updated_at: FieldValue.serverTimestamp()
-      }, { merge: true });
-      console.log(`[MAINTENANCE] Updated to: ${enabled} by ${req.user.username}`);
-      res.json({ success: true, enabled: !!enabled });
-    } catch (err) {
-      console.error('[MAINTENANCE] Update error:', err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
   // User Management Routes
   app.get("/api/users", requireAuth, async (req: any, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
@@ -1205,8 +1528,6 @@ async function startServer() {
           total_pages: scanning.pages + extraPages,
           extra_pages: extraPages,
           default_extra_pages: siteData.default_extra_pages || 0,
-          target_ep_pages: siteData.target_ep_pages || 0,
-          target_days_remaining: siteData.target_days_remaining || 30,
           rate: siteData.rate || 0.3,
           unit: siteData.unit || 'Files',
           total_mouza_scanned: siteData.total_mouza_scanned || 0,
@@ -1775,7 +2096,6 @@ async function startServer() {
         .map(m => ({
           month: m.month,
           files: m.files,
-          regular_pages: m.personal_pages,
           pages: mode === 'main' ? (m.personal_pages + m.extra_pages) : m.personal_pages,
           extra_pages: m.extra_pages
         }))
@@ -2296,14 +2616,12 @@ async function startServer() {
     if (!checkSiteAccess(req.user, req.params.id, 'admin-sites')) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    const { target_files, target_ep_pages, target_days_remaining, rate, unit, total_mouza_scanned, default_extra_pages, link, mouza_entry_link } = req.body;
+    const { target_files, rate, unit, total_mouza_scanned, default_extra_pages, link, mouza_entry_link } = req.body;
     try {
       const updateData: any = {
         updated_at: FieldValue.serverTimestamp()
       };
       if (target_files !== undefined) updateData.target_files = Number(target_files);
-      if (target_ep_pages !== undefined) updateData.target_ep_pages = Number(target_ep_pages);
-      if (target_days_remaining !== undefined) updateData.target_days_remaining = Number(target_days_remaining);
       if (rate !== undefined) updateData.rate = Number(rate);
       if (unit !== undefined) updateData.unit = String(unit);
       if (total_mouza_scanned !== undefined) updateData.total_mouza_scanned = Number(total_mouza_scanned);
@@ -2334,51 +2652,6 @@ async function startServer() {
     } catch (err) {
       console.error("Site update error:", err);
       res.status(500).json({ error: "Failed to update site" });
-    }
-  });
-
-  // Specific Date EP & Scanning Lookup
-  app.get("/api/sites/:siteId/date-lookup", requireAuth, async (req: any, res) => {
-    const { siteId } = req.params;
-    const { date } = req.query;
-    if (!siteId || !date) {
-      return res.status(400).json({ error: "siteId and date are required" });
-    }
-    try {
-      const scanningSnapshot = await db.collection('scanning_data')
-        .where('site_id', '==', String(siteId))
-        .where('date', '==', String(date))
-        .get();
-
-      let regularPages = 0;
-      let files = 0;
-      scanningSnapshot.docs.forEach(doc => {
-        const d = doc.data();
-        regularPages += (d.pages || 0);
-        files += (d.files || 0);
-      });
-
-      const extraDocId = `${siteId}_${date}`;
-      const extraDoc = await db.collection('daily_extra_pages').doc(extraDocId).get();
-      let extraPages = 0;
-      if (extraDoc.exists) {
-        extraPages = extraDoc.data()?.extra_pages || 0;
-      } else {
-        const siteDoc = await db.collection('sites').doc(siteId).get();
-        extraPages = siteDoc.exists ? (siteDoc.data()?.default_extra_pages || 0) : 0;
-      }
-
-      res.json({
-        site_id: siteId,
-        date: String(date),
-        files,
-        regular_pages: regularPages,
-        extra_pages: extraPages,
-        total_pages: regularPages + extraPages
-      });
-    } catch (err) {
-      console.error('[DATE-LOOKUP] Error:', err);
-      res.status(500).json({ error: "Failed to fetch date lookup" });
     }
   });
 
@@ -2431,7 +2704,7 @@ async function startServer() {
 
   app.post("/api/sites", requireAuth, async (req: any, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
-    const { name, target_files, target_ep_pages, target_days_remaining, rate, unit, total_mouza_scanned, default_extra_pages, link, mouza_entry_link } = req.body;
+    const { name, target_files, rate, unit, total_mouza_scanned, default_extra_pages, link, mouza_entry_link } = req.body;
     
     if (!name || typeof name !== 'string' || name.length < 2 || name.length > 50) {
       return res.status(400).json({ error: "Site name must be between 2 and 50 characters" });
@@ -2441,8 +2714,6 @@ async function startServer() {
       const docRef = await db.collection('sites').add({
         name,
         target_files: target_files || 0,
-        target_ep_pages: target_ep_pages || 0,
-        target_days_remaining: target_days_remaining || 30,
         total_mouza_scanned: total_mouza_scanned || 0,
         rate: rate || 0.3,
         unit: unit || 'Files',
@@ -2452,7 +2723,7 @@ async function startServer() {
         created_at: FieldValue.serverTimestamp()
       });
       clearCache('sites-summary');
-      res.json({ id: docRef.id, name, target_files, target_ep_pages: target_ep_pages || 0, target_days_remaining: target_days_remaining || 30, total_mouza_scanned: total_mouza_scanned || 0, rate: rate || 0.3, unit: unit || 'Files', default_extra_pages: default_extra_pages || 0, link: link || '', mouza_entry_link: mouza_entry_link || '' });
+      res.json({ id: docRef.id, name, target_files, total_mouza_scanned: total_mouza_scanned || 0, rate: rate || 0.3, unit: unit || 'Files', default_extra_pages: default_extra_pages || 0, link: link || '', mouza_entry_link: mouza_entry_link || '' });
     } catch (err) {
       console.error("Site create error:", err);
       res.status(500).json({ error: "Failed to create site" });
