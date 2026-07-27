@@ -3,7 +3,8 @@ import session from "express-session";
 import { createServer as createViteServer } from "vite";
 import * as admin from "firebase-admin";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
-import { getFirestore, FieldValue, FieldPath, Query } from "firebase-admin/firestore";
+import { getFirestore, FieldValue, FieldPath, Query, AggregateField } from "firebase-admin/firestore";
+import crypto from "crypto";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 import { Resend } from "resend";
@@ -22,6 +23,48 @@ function setCache(key: string, data: any, ttlMs = 60000) {
 function clearCache(pattern: string) {
   for (const key of cache.keys()) {
     if (key.includes(pattern)) cache.delete(key);
+  }
+}
+
+// Run a `where(field, 'in', values)` query safely for ANY number of values by
+// splitting into chunks of 10 (Firestore's 'in' limit) and merging results.
+// `base` is a function that returns a fresh query for a given chunk.
+async function runChunkedIn(base: (chunk: string[]) => any, values: string[]): Promise<any[]> {
+  const unique = Array.from(new Set(values.map(String)));
+  if (unique.length === 0) return [];
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += 10) chunks.push(unique.slice(i, i + 10));
+  const results = await Promise.all(chunks.map(c => base(c).get()));
+  const seen = new Set<string>();
+  const docs: any[] = [];
+  for (const snap of results) {
+    for (const doc of snap.docs) {
+      if (!seen.has(doc.id)) { seen.add(doc.id); docs.push(doc); }
+    }
+  }
+  return docs;
+}
+
+// Exact server-side SUM aggregation (billed ~1 read per 1000 matched docs).
+// Falls back to a scan if aggregation is unavailable (e.g. local JSON fallback).
+async function sumAgg(query: any, fields: string[]): Promise<Record<string, number>> {
+  try {
+    const spec: any = {};
+    for (const f of fields) spec[f] = AggregateField.sum(f);
+    const snap = await query.aggregate(spec).get();
+    const data = snap.data() || {};
+    const out: Record<string, number> = {};
+    for (const f of fields) out[f] = Number(data[f] || 0);
+    return out;
+  } catch (e) {
+    const snap = await query.get();
+    const out: Record<string, number> = {};
+    for (const f of fields) out[f] = 0;
+    snap.docs.forEach((d: any) => {
+      const dd = d.data();
+      for (const f of fields) out[f] += Number(dd[f] || 0);
+    });
+    return out;
   }
 }
 
@@ -412,15 +455,27 @@ async function seedData() {
   const adminSnapshot = await usersRef.where('username', '==', 'admin').get();
   
   if (adminSnapshot.empty) {
-    const hashedPassword = bcrypt.hashSync('password', 10);
+    // Use an explicit env-provided password if present, otherwise generate a strong random one.
+    const initialPassword = process.env.INITIAL_ADMIN_PASSWORD || crypto.randomBytes(12).toString('base64url');
+    const hashedPassword = bcrypt.hashSync(initialPassword, 10);
     await usersRef.add({
       username: 'admin',
       password: hashedPassword,
       role: 'admin',
+      must_change_password: true,
       permissions: ["main-view", "personal-records", "admin-data-entry", "admin-management", "admin-reports", "admin-sites", "admin-operators", "admin-users"],
       site_access: []
     });
-    console.log('Seeded default admin');
+    console.log('========================================================');
+    console.log('[SEED] Created default admin account.');
+    console.log(`[SEED] username: admin`);
+    if (!process.env.INITIAL_ADMIN_PASSWORD) {
+      console.log(`[SEED] TEMPORARY PASSWORD (shown once): ${initialPassword}`);
+      console.log('[SEED] Log in and change it immediately.');
+    } else {
+      console.log('[SEED] password: (from INITIAL_ADMIN_PASSWORD env var)');
+    }
+    console.log('========================================================');
   }
 
   const sitesRef = db.collection('sites');
@@ -940,8 +995,15 @@ async function startServer() {
     standardHeaders: true,
     legacyHeaders: false,
   });
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (!sessionSecret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('SESSION_SECRET must be set in production. Refusing to start with a default secret.');
+    }
+    console.warn('[SECURITY] SESSION_SECRET is not set — using an insecure development default. Do NOT use this in production.');
+  }
   app.use(session({
-    secret: process.env.SESSION_SECRET || 'scanning-track-v1',
+    secret: sessionSecret || 'insecure-dev-only-secret',
     resave: false,
     saveUninitialized: false,
     rolling: false,
@@ -955,16 +1017,18 @@ async function startServer() {
     }
   }));
 
-  // Debug middleware to log session state
-  app.use((req: any, res: any, next: any) => {
-    if (req.url.startsWith('/api/')) {
-      const hasSession = !!(req.session && req.session.user);
-      const hasToken = !!(req.headers['x-auth-token']);
-      const hasCookie = !!(req.headers.cookie && req.headers.cookie.includes('scantrack.sid'));
-      console.log(`[DEBUG] ${req.method} ${req.url} - Session: ${hasSession}, Token: ${hasToken}, Cookie: ${hasCookie}`);
-    }
-    next();
-  });
+  // Debug middleware to log session state (development only; never logs token contents)
+  if (process.env.NODE_ENV !== 'production') {
+    app.use((req: any, res: any, next: any) => {
+      if (req.url.startsWith('/api/')) {
+        const hasSession = !!(req.session && req.session.user);
+        const hasToken = !!(req.headers['x-auth-token']);
+        const hasCookie = !!(req.headers.cookie && req.headers.cookie.includes('scantrack.sid'));
+        console.log(`[DEBUG] ${req.method} ${req.url} - Session: ${hasSession}, Token: ${hasToken}, Cookie: ${hasCookie}`);
+      }
+      next();
+    });
+  }
 
   // Auth Middleware
   const requireAuth = async (req: any, res: any, next: any) => {
@@ -1002,7 +1066,7 @@ async function startServer() {
             }
           }
         } else {
-          console.log(`[AUTH] Invalid token provided: ${token.substring(0, 5)}...`);
+          console.log(`[AUTH] Invalid token provided`);
         }
       } catch (err) {
         console.error('[AUTH] Token lookup error:', err);
@@ -1069,8 +1133,8 @@ async function startServer() {
           site_access: user.site_access || []
         };
 
-        // Generate token with 7 day expiry
-        const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+        // Generate token with 7 day expiry (cryptographically secure)
+        const token = crypto.randomBytes(32).toString('hex');
         const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
         console.log(`[AUTH] Generating token for ${username}`);
         await db.collection('user_tokens').doc(token).set({
@@ -1106,7 +1170,7 @@ async function startServer() {
       const token = req.headers['x-auth-token'] || req.query.token;
       const sessionUser = req.session?.user;
       
-      console.log(`[AUTH] /api/me check. Path: ${req.url}, Token: ${token ? token.substring(0, 8) + '...' : 'missing'}, Session: ${sessionUser ? sessionUser.username : 'missing'}`);
+      console.log(`[AUTH] /api/me check. Path: ${req.url}, Token: ${token ? 'present' : 'missing'}, Session: ${sessionUser ? 'present' : 'missing'}`);
       
       if (token && typeof token === 'string' && token.length > 0) {
         const tokenSnapshot = await db.collection('user_tokens').doc(token).get();
@@ -1239,8 +1303,8 @@ async function startServer() {
         return res.json({ success: true });
       }
 
-      // Generate reset token (1 hour expiry)
-      const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+      // Generate reset token (1 hour expiry, cryptographically secure)
+      const token = crypto.randomBytes(32).toString('hex');
       const expires = new Date(Date.now() + 60 * 60 * 1000);
       await db.collection('password_reset_tokens').doc(token).set({
         user_id: userDoc.id,
@@ -1288,7 +1352,10 @@ async function startServer() {
         return res.status(400).json({ error: "Invalid or expired reset link." });
       }
       const tokenData = tokenDoc.data();
-      if (tokenData?.expires_at.toDate() < new Date()) {
+      const resetExpiry = tokenData?.expires_at
+        ? (typeof tokenData.expires_at.toDate === 'function' ? tokenData.expires_at.toDate() : new Date(tokenData.expires_at))
+        : null;
+      if (!resetExpiry || isNaN(resetExpiry.getTime()) || resetExpiry < new Date()) {
         await db.collection('password_reset_tokens').doc(token).delete();
         return res.status(400).json({ error: "Reset link has expired. Please request a new one." });
       }
@@ -1484,52 +1551,42 @@ async function startServer() {
   });
 
   app.get("/api/sites-summary", requireAuth, async (req: any, res) => {
-    const cacheKey = `sites-summary-${req.user.role}-${req.user.id}`;
-    const cached = getCache(cacheKey);
-    if (cached) return res.json(cached);
-
     try {
       const sitesSnapshot = await db.collection('sites').get();
-      const accessibleSiteIds = req.user.role === 'admin' 
+      const accessibleSiteIds = req.user.role === 'admin'
         ? sitesSnapshot.docs.map(doc => doc.id)
         : (Array.isArray(req.user.site_access) ? req.user.site_access.map(String) : []);
 
       if (accessibleSiteIds.length === 0) return res.json([]);
 
-      // Fetch all scanning_data and extra_pages in 2 calls instead of N*2 calls
-      const [scanningSnapshot, extraSnapshot] = await Promise.all([
-        db.collection('scanning_data').get(),
-        db.collection('daily_extra_pages').get()
-      ]);
+      // Cache is shared by the exact set of accessible sites, so users with the
+      // same access reuse one entry instead of each triggering their own scan.
+      const cacheKey = `sites-summary-${[...accessibleSiteIds].sort().join(',')}`;
+      const cached = getCache(cacheKey);
+      if (cached) return res.json(cached);
 
-      // Build maps for fast lookup
-      const scanningBySite = new Map<string, { files: number; pages: number }>();
-      scanningSnapshot.docs.forEach(doc => {
-        const d = doc.data();
-        const existing = scanningBySite.get(d.site_id) || { files: 0, pages: 0 };
-        existing.files += (d.files || 0);
-        existing.pages += (d.pages || 0);
-        scanningBySite.set(d.site_id, existing);
-      });
-
-      const extraBySite = new Map<string, number>();
-      extraSnapshot.docs.forEach(doc => {
-        const d = doc.data();
-        extraBySite.set(d.site_id, (extraBySite.get(d.site_id) || 0) + (d.extra_pages || 0));
-      });
+      // Compute totals with exact server-side SUM aggregation per site.
+      // Billed ~1 read per site instead of 1 read per scanning_data document.
+      const totals = await Promise.all(accessibleSiteIds.map(async (siteId) => {
+        const [scan, extra] = await Promise.all([
+          sumAgg(db.collection('scanning_data').where('site_id', '==', siteId), ['files', 'pages']),
+          sumAgg(db.collection('daily_extra_pages').where('site_id', '==', siteId), ['extra_pages']),
+        ]);
+        return { siteId, files: scan.files, pages: scan.pages, extra_pages: extra.extra_pages };
+      }));
+      const totalsBySite = new Map(totals.map(t => [t.siteId, t]));
 
       const summary = accessibleSiteIds.map(siteId => {
         const siteDoc = sitesSnapshot.docs.find(doc => doc.id === siteId);
         if (!siteDoc) return null;
         const siteData = siteDoc.data();
-        const scanning = scanningBySite.get(siteId) || { files: 0, pages: 0 };
-        const extraPages = extraBySite.get(siteId) || 0;
+        const t = totalsBySite.get(siteId) || { files: 0, pages: 0, extra_pages: 0 };
         return {
           id: siteId,
           name: siteData.name,
-          total_files: scanning.files,
-          total_pages: scanning.pages + extraPages,
-          extra_pages: extraPages,
+          total_files: t.files,
+          total_pages: t.pages + t.extra_pages,
+          extra_pages: t.extra_pages,
           default_extra_pages: siteData.default_extra_pages || 0,
           target_ep_pages: siteData.target_ep_pages || 0,
           target_days_remaining: siteData.target_days_remaining || 30,
@@ -1541,7 +1598,7 @@ async function startServer() {
         };
       }).filter(Boolean);
 
-      setCache(cacheKey, summary);
+      setCache(cacheKey, summary, 120000);
       res.json(summary);
     } catch (err) {
       console.error('[SITES-SUMMARY] Error:', err);
@@ -1556,7 +1613,10 @@ async function startServer() {
       return res.status(403).json({ error: "Access denied to this site" });
     }
 
-    const cacheKey = `operators-summary-${siteId || 'all'}-${month || 'all'}-${startDate || 'all'}-${endDate || 'all'}-${req.user.id}`;
+    const accessSig = req.user.role === 'admin'
+      ? 'admin'
+      : (Array.isArray(req.user.site_access) ? [...req.user.site_access].map(String).sort().join('.') : 'none');
+    const cacheKey = `operators-summary-${siteId || 'all'}-${month || 'all'}-${startDate || 'all'}-${endDate || 'all'}-${accessSig}`;
     const cached = getCache(cacheKey);
     if (cached) return res.json(cached);
 
@@ -1576,47 +1636,51 @@ async function startServer() {
 
       if (req.user.role !== 'admin' && accessibleSiteIds.length === 0) return res.json([]);
 
-      let employeesQuery: Query = db.collection('employees').where('is_active', '==', true);
+      // Resolve the employee list (chunked 'in' so >10 accessible sites still filter correctly).
+      let employees: any[];
       if (siteId) {
-        employeesQuery = employeesQuery.where('site_id', '==', String(siteId));
+        const snap = await db.collection('employees').where('is_active', '==', true).where('site_id', '==', String(siteId)).get();
+        employees = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       } else if (req.user.role !== 'admin') {
-        if (accessibleSiteIds.length <= 10) {
-          employeesQuery = employeesQuery.where('site_id', 'in', accessibleSiteIds);
-        }
+        const docs = await runChunkedIn(
+          (chunk) => db.collection('employees').where('is_active', '==', true).where('site_id', 'in', chunk),
+          accessibleSiteIds
+        );
+        employees = docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+      } else {
+        const snap = await db.collection('employees').where('is_active', '==', true).get();
+        employees = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       }
-
-      const employeesSnapshot = await employeesQuery.get();
-      const employees = employeesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
 
       if (employees.length === 0) return res.json([]);
 
-      // Fetch all scanning data in ONE call instead of N calls
-      let scanningQuery: Query = db.collection('scanning_data');
-      if (siteId) {
-        scanningQuery = scanningQuery.where('site_id', '==', String(siteId));
-      }
-      if (startDate) {
-        scanningQuery = scanningQuery.where('date', '>=', String(startDate));
-      }
-      if (endDate) {
-        scanningQuery = scanningQuery.where('date', '<=', String(endDate));
-      }
-      if (month && !startDate && !endDate) {
-        scanningQuery = scanningQuery
-          .where('date', '>=', month + "-01")
-          .where('date', '<=', month + "-31");
-      }
-      const scanningSnapshot = await scanningQuery.get();
-
-      // Build map: employee_id -> { files, pages }
+      const hasDateFilter = !!(startDate || endDate || month);
       const scanningByEmployee = new Map<string, { files: number; pages: number }>();
-      scanningSnapshot.docs.forEach(doc => {
-        const d = doc.data();
-        const existing = scanningByEmployee.get(d.employee_id) || { files: 0, pages: 0 };
-        existing.files += (d.files || 0);
-        existing.pages += (d.pages || 0);
-        scanningByEmployee.set(d.employee_id, existing);
-      });
+
+      if (hasDateFilter) {
+        // Date-bounded view: one scan over the (small) date range, scoped by site when given.
+        let scanningQuery: Query = db.collection('scanning_data');
+        if (siteId) scanningQuery = scanningQuery.where('site_id', '==', String(siteId));
+        if (startDate) scanningQuery = scanningQuery.where('date', '>=', String(startDate));
+        if (endDate) scanningQuery = scanningQuery.where('date', '<=', String(endDate));
+        if (month && !startDate && !endDate) {
+          scanningQuery = scanningQuery.where('date', '>=', month + "-01").where('date', '<=', month + "-31");
+        }
+        const scanningSnapshot = await scanningQuery.get();
+        scanningSnapshot.docs.forEach(doc => {
+          const d = doc.data();
+          const existing = scanningByEmployee.get(d.employee_id) || { files: 0, pages: 0 };
+          existing.files += (d.files || 0);
+          existing.pages += (d.pages || 0);
+          scanningByEmployee.set(d.employee_id, existing);
+        });
+      } else {
+        // All-time view: exact per-employee SUM aggregation instead of scanning the whole collection.
+        await Promise.all(employees.map(async (e: any) => {
+          const t = await sumAgg(db.collection('scanning_data').where('employee_id', '==', e.id), ['files', 'pages']);
+          scanningByEmployee.set(e.id, { files: t.files, pages: t.pages });
+        }));
+      }
 
       const summary = employees.map((e: any) => {
         const totals = scanningByEmployee.get(e.id) || { files: 0, pages: 0 };
@@ -1630,7 +1694,7 @@ async function startServer() {
         };
       });
 
-      setCache(cacheKey, summary, 60000);
+      setCache(cacheKey, summary, 120000);
       res.json(summary);
     } catch (err) {
       console.error('[OPERATORS-SUMMARY] Error:', err);
@@ -2057,19 +2121,25 @@ async function startServer() {
       if (!siteDoc.exists) return res.status(404).json({ error: "Site not found" });
       const site = siteDoc.data();
 
-      const scanningSnapshot = await db.collection('scanning_data').where('site_id', '==', siteId).get();
-      const scanningData = scanningSnapshot.docs.map(doc => doc.data());
+      // Exact ALL-TIME overall totals via server-side SUM aggregation (cheap: ~1 read each).
+      const [scanTotals, extraTotals] = await Promise.all([
+        sumAgg(db.collection('scanning_data').where('site_id', '==', siteId), ['files', 'pages']),
+        sumAgg(db.collection('daily_extra_pages').where('site_id', '==', siteId), ['extra_pages']),
+      ]);
 
-      const extraSnapshot = await db.collection('daily_extra_pages').where('site_id', '==', siteId).get();
+      // Detailed monthly/weekly breakdown only needs recent data — bound the scan
+      // to the last ~13 months instead of reading the site's entire history.
+      const detailCutoff = format(subMonths(new Date(), 13), 'yyyy-MM-dd');
+      const [scanningSnapshot, extraSnapshot] = await Promise.all([
+        db.collection('scanning_data').where('site_id', '==', siteId).where('date', '>=', detailCutoff).get(),
+        db.collection('daily_extra_pages').where('site_id', '==', siteId).where('date', '>=', detailCutoff).get(),
+      ]);
+      const scanningData = scanningSnapshot.docs.map(doc => doc.data());
       const extraPagesData = extraSnapshot.docs.map(doc => doc.data());
 
-      // Overall stats
-      const totalFiles = scanningData.reduce((sum, d) => sum + (d.files || 0), 0);
-      let totalPages = scanningData.reduce((sum, d) => sum + (d.pages || 0), 0);
-      
       const overall = {
-        total_files: totalFiles,
-        total_pages: mode === 'main' ? (totalPages + extraPagesData.reduce((sum, d) => sum + (d.extra_pages || 0), 0)) : totalPages,
+        total_files: scanTotals.files,
+        total_pages: mode === 'main' ? (scanTotals.pages + extraTotals.extra_pages) : scanTotals.pages,
         target_files: site?.target_files || 0,
         total_mouza_scanned: site?.total_mouza_scanned || 0,
         unit: site?.unit || 'Files',
@@ -2865,26 +2935,27 @@ async function startServer() {
 
       if (accessibleSiteIds.length === 0 && req.user.role !== 'admin' && !req.user.employee_id) return res.json([]);
 
-      let employeesQuery: Query = db.collection('employees').where('is_active', '==', true);
+      let employees: any[];
 
-      if (req.user.role !== 'admin') {
-        if (req.user.employee_id) {
-          employeesQuery = employeesQuery.where(FieldPath.documentId(), '==', String(req.user.employee_id));
-        } else if (accessibleSiteIds.length > 0) {
-          // Firestore 'in' query has a limit of 10 items, but let's assume it's fine for now or handle it
-          if (accessibleSiteIds.length <= 10) {
-            employeesQuery = employeesQuery.where('site_id', 'in', accessibleSiteIds);
-          } else {
-            // Fallback: fetch all and filter in memory if too many sites
-            // For simplicity, we'll just use the first 10 or fetch all active
-          }
-        } else {
-          return res.json([]);
-        }
+      if (req.user.role !== 'admin' && req.user.employee_id) {
+        // A single operator: just their own employee record.
+        const empDoc = await db.collection('employees').doc(String(req.user.employee_id)).get();
+        employees = (empDoc.exists && empDoc.data()?.is_active)
+          ? [{ id: empDoc.id, ...empDoc.data() }]
+          : [];
+      } else if (req.user.role !== 'admin') {
+        // Non-admin scoped to their accessible sites — chunk the 'in' so >10 sites still filters correctly.
+        if (accessibleSiteIds.length === 0) return res.json([]);
+        const docs = await runChunkedIn(
+          (chunk) => db.collection('employees').where('is_active', '==', true).where('site_id', 'in', chunk),
+          accessibleSiteIds
+        );
+        employees = docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+      } else {
+        // Admin: all active employees.
+        const employeesSnapshot = await db.collection('employees').where('is_active', '==', true).get();
+        employees = employeesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       }
-
-      const employeesSnapshot = await employeesQuery.get();
-      const employees = employeesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
 
       // Join with site names in memory
       const sitesMap = new Map();

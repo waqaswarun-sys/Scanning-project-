@@ -1,116 +1,31 @@
 // ===============================================================
-// Assumed Data Model
+// ScanTrack Pro — Firestore Security Rules
 // ===============================================================
 //
-// Collection: sites
-// Fields:
-//   - name: string (required)
-//   - target_files: number (optional)
+// ARCHITECTURE NOTE:
+// This application does NOT access Firestore directly from the
+// browser. All reads and writes go through the Express API server,
+// which uses the Firebase Admin SDK. The Admin SDK bypasses these
+// security rules entirely, so the server continues to work no
+// matter what is written here.
 //
-// Collection: employees
-// Fields:
-//   - name: string (required)
-//   - site_id: string (required)
-//   - is_active: bool (optional)
-//   - rate_per_page: number (optional)
+// Because no trusted client path exists, the correct posture is to
+// DENY all direct client access. This prevents anyone who obtains
+// the public web config and signs in with Firebase Auth (e.g. the
+// Google sign-in used for the Sheets importer) from reading or
+// writing collections directly and bypassing the server's
+// permission checks.
 //
-// Collection: scanning_data
-// Fields:
-//   - employee_id: string (required)
-//   - date: string (required, YYYY-MM-DD)
-//   - files: number (optional)
-//   - pages: number (optional)
-//
-// Collection: daily_extra_pages
-// Fields:
-//   - site_id: string (required)
-//   - date: string (required, YYYY-MM-DD)
-//   - extra_pages: number (optional)
-//
-// Collection: users
-// Fields:
-//   - username: string (required)
-//   - password: string (required)
-//   - role: string (required, 'admin' or 'user')
-//   - permissions: list (optional)
-//   - site_access: list (optional)
-//   - employee_id: string (optional)
-//
-// Collection: user_tokens
-// Fields:
-//   - user_id: string (required)
-//   - created_at: timestamp (optional)
-//
+// If you ever add direct client Firestore access, scope specific
+// per-collection rules here instead of loosening this default.
 // ===============================================================
 
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // ===============================================================
-    // Helper Functions
-    // ===============================================================
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    function isAdmin() {
-      return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          (request.auth.token.email == "waqaswarun@gmail.com" && request.auth.token.email_verified == true));
-    }
-
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
-    }
-
-    // ===============================================================
-    // Rules
-    // ===============================================================
-
-    match /sites/{siteId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-
-    match /employees/{employeeId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-
-    match /scanning_data/{dataId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin() || (isAuthenticated() && request.resource.data.employee_id == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.employee_id);
-    }
-
-    match /daily_extra_pages/{extraId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-
-    match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create: if isAdmin() || (isOwner(userId) && request.resource.data.role == 'user');
-      allow update: if isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role);
-    }
-
-    match /user_tokens/{tokenId} {
-      allow read, write: if isAdmin() || (isAuthenticated() && request.resource.data.user_id == request.auth.uid);
-    }
-
-    match /apps/{appId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-
-    // Default deny
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
+
