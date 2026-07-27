@@ -48,23 +48,23 @@ import { Site, Employee, ScanningData, Stats } from './src/types.ts';
 // Initialize Firebase Admin
 import firebaseConfig from './firebase-applet-config.json';
 
-if (!getApps().length) {
-  let serviceAccount: any = null;
-  try {
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-      if (serviceAccount && serviceAccount.private_key) {
-        serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
-      }
+let serviceAccount: any = null;
+try {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    if (serviceAccount && serviceAccount.private_key) {
+      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
     }
-  } catch (e) {
-    console.error('[FIREBASE] Failed to parse FIREBASE_SERVICE_ACCOUNT:', e);
   }
+} catch (e) {
+  console.error('[FIREBASE] Failed to parse FIREBASE_SERVICE_ACCOUNT:', e);
+}
 
+if (!getApps().length) {
   if (serviceAccount && serviceAccount.project_id && serviceAccount.private_key) {
     initializeApp({
       credential: cert(serviceAccount),
-      projectId: firebaseConfig.projectId || serviceAccount.project_id,
+      projectId: serviceAccount.project_id,
     });
   } else {
     initializeApp({
@@ -73,7 +73,9 @@ if (!getApps().length) {
   }
 }
 
-const firestoreDbId = (firebaseConfig as any).firestoreDatabaseId;
+const firestoreDbId = process.env.FIREBASE_DATABASE_ID || (
+  serviceAccount ? undefined : (firebaseConfig as any).firestoreDatabaseId
+);
 const rawFirestoreDb = firestoreDbId ? getFirestore(getApps()[0], firestoreDbId) : getFirestore();
 const resend = new Resend(process.env.RESEND_API_KEY || 're_dummy_key');
 
