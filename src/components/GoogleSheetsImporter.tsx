@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ScanningData, MouzaEntry } from '../types';
 import {
   Check,
@@ -54,18 +54,82 @@ export const GoogleSheetsImporter: React.FC<GoogleSheetsImporterProps> = ({
   const [isFetching, setIsFetching] = useState(false);
   const [feedback, setFeedback] = useState<Array<{ type: 'success' | 'warning' | 'info'; message: string }>>([]);
   const [showExplanation, setShowExplanation] = useState(false);
+  const [linkStatus, setLinkStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const dirtyRef = useRef(false);
 
-  // Load the per-site published-sheet link when the selected site changes.
+  // Authenticated fetch to our own server (adds the app's auth token).
+  const authedFetch = (url: string, options: RequestInit = {}) => {
+    const authToken = localStorage.getItem('authToken');
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        ...(authToken ? { 'x-auth-token': authToken } : {}),
+      },
+      credentials: 'include',
+    });
+  };
+
+  const siteSavedUrl = (): string => {
+    const siteObj: any = sites.find(s => String(s.id) === String(selectedSiteId));
+    return (siteObj && typeof siteObj.sheet_csv_url === 'string') ? siteObj.sheet_csv_url : '';
+  };
+
+  // On site change: load the saved link. Prefer the database value (works on any
+  // device); fall back to this browser's cached value.
   useEffect(() => {
-    const saved = localStorage.getItem(`gs_pub_url_${selectedSiteId}`) || '';
-    setSheetInput(saved);
+    dirtyRef.current = false;
+    const fromServer = siteSavedUrl();
+    const fromLocal = localStorage.getItem(`gs_pub_url_${selectedSiteId}`) || '';
+    setSheetInput(fromServer || fromLocal);
+    setLinkStatus(fromServer ? 'saved' : 'idle');
     setFeedback([]);
   }, [selectedSiteId]);
 
-  // Remember the link per site.
+  // If the sites list loads/updates after mount, fill in the saved link —
+  // but never overwrite what the user is currently typing.
   useEffect(() => {
-    if (sheetInput) localStorage.setItem(`gs_pub_url_${selectedSiteId}`, sheetInput);
-  }, [sheetInput, selectedSiteId]);
+    if (dirtyRef.current) return;
+    const fromServer = siteSavedUrl();
+    if (fromServer && fromServer !== sheetInput) {
+      setSheetInput(fromServer);
+      setLinkStatus('saved');
+    }
+  }, [sites, selectedSiteId]);
+
+  const handleLinkChange = (val: string) => {
+    dirtyRef.current = true;
+    setSheetInput(val);
+    setLinkStatus('idle');
+    try {
+      if (val.trim()) localStorage.setItem(`gs_pub_url_${selectedSiteId}`, val.trim());
+      else localStorage.removeItem(`gs_pub_url_${selectedSiteId}`);
+    } catch (e) { /* ignore storage errors */ }
+  };
+
+  // Persist the link to the database so it's remembered everywhere.
+  const saveLinkToServer = async (val: string) => {
+    const value = val.trim();
+    if (value === siteSavedUrl()) { dirtyRef.current = false; return; } // nothing changed
+    setLinkStatus('saving');
+    try {
+      const resp = await authedFetch(`/api/sites/${selectedSiteId}/sheet-url`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sheet_csv_url: value }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || 'Save failed');
+      }
+      const siteObj: any = sites.find(s => String(s.id) === String(selectedSiteId));
+      if (siteObj) siteObj.sheet_csv_url = value; // keep local prop copy in sync
+      dirtyRef.current = false;
+      setLinkStatus('saved');
+    } catch (e) {
+      setLinkStatus('error');
+    }
+  };
 
   // Fuzzy match score for operator names.
   const getMatchScore = (source: string, target: string): number => {
@@ -126,11 +190,10 @@ export const GoogleSheetsImporter: React.FC<GoogleSheetsImporterProps> = ({
     setFeedback([]);
 
     try {
-      const authToken = localStorage.getItem('authToken');
-      const resp = await fetch(`/api/sheets/fetch-csv?url=${encodeURIComponent(sheetInput.trim())}`, {
-        headers: authToken ? { 'x-auth-token': authToken } : {},
-        credentials: 'include',
-      });
+      // Make sure the link is saved to the database before we use it.
+      if (dirtyRef.current) await saveLinkToServer(sheetInput);
+
+      const resp = await authedFetch(`/api/sheets/fetch-csv?url=${encodeURIComponent(sheetInput.trim())}`);
 
       if (!resp.ok) {
         const errData = await resp.json().catch(() => ({}));
@@ -286,13 +349,19 @@ export const GoogleSheetsImporter: React.FC<GoogleSheetsImporterProps> = ({
 
       <div className="space-y-4">
         <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-            Published Google Sheet link (CSV) for this site
-          </label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              Published Google Sheet link (CSV) for this site
+            </label>
+            {linkStatus === 'saving' && <span className="text-[10px] font-bold text-slate-400">Saving…</span>}
+            {linkStatus === 'saved' && <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1"><Check className="w-3 h-3" />Saved for all devices</span>}
+            {linkStatus === 'error' && <span className="text-[10px] font-bold text-amber-600">Couldn't save — will retry on fetch</span>}
+          </div>
           <input
             type="text"
             value={sheetInput}
-            onChange={(e) => setSheetInput(e.target.value)}
+            onChange={(e) => handleLinkChange(e.target.value)}
+            onBlur={() => { if (dirtyRef.current) saveLinkToServer(sheetInput); }}
             placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"
             className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-sm"
           />

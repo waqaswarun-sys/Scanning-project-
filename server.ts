@@ -2687,6 +2687,30 @@ async function startServer() {
     }
   });
 
+  // Save the published-CSV link for a site, in the database, so it's remembered
+  // for every user on every device. Any user who can enter data for the site can set it.
+  app.put("/api/sites/:id/sheet-url", requireAuth, async (req: any, res) => {
+    if (!checkSiteAccess(req.user, req.params.id)) {
+      return res.status(403).json({ error: "Access denied to this site" });
+    }
+    try {
+      const url = req.body?.sheet_csv_url;
+      const value = typeof url === 'string' ? url.trim() : '';
+      if (value && !(value.startsWith('https://docs.google.com/') && value.includes('/spreadsheets/'))) {
+        return res.status(400).json({ error: "Please paste a published Google Sheets link." });
+      }
+      await db.collection('sites').doc(req.params.id).update({
+        sheet_csv_url: value,
+        updated_at: FieldValue.serverTimestamp()
+      });
+      clearCache('sites-summary');
+      res.json({ success: true, sheet_csv_url: value });
+    } catch (err) {
+      console.error("[SHEET-URL] Save error:", err);
+      res.status(500).json({ error: "Failed to save the link." });
+    }
+  });
+
   app.patch("/api/sites/:id", requireAuth, async (req: any, res) => {
     if (!checkSiteAccess(req.user, req.params.id, 'admin-sites')) {
       return res.status(403).json({ error: "Forbidden" });
