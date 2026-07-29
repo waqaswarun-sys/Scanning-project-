@@ -2127,16 +2127,6 @@ async function startServer() {
         sumAgg(db.collection('daily_extra_pages').where('site_id', '==', siteId), ['extra_pages']),
       ]);
 
-      // Detailed monthly/weekly breakdown only needs recent data — bound the scan
-      // to the last ~13 months instead of reading the site's entire history.
-      const detailCutoff = format(subMonths(new Date(), 13), 'yyyy-MM-dd');
-      const [scanningSnapshot, extraSnapshot] = await Promise.all([
-        db.collection('scanning_data').where('site_id', '==', siteId).where('date', '>=', detailCutoff).get(),
-        db.collection('daily_extra_pages').where('site_id', '==', siteId).where('date', '>=', detailCutoff).get(),
-      ]);
-      const scanningData = scanningSnapshot.docs.map(doc => doc.data());
-      const extraPagesData = extraSnapshot.docs.map(doc => doc.data());
-
       const overall = {
         total_files: scanTotals.files,
         total_pages: mode === 'main' ? (scanTotals.pages + extraTotals.extra_pages) : scanTotals.pages,
@@ -2146,28 +2136,21 @@ async function startServer() {
         rate: site?.rate || 0.3
       };
 
-      // Monthly stats
-      const monthlyMap = new Map();
-      scanningData.forEach(d => {
-        const month = d.date.substring(0, 7); // YYYY-MM
-        if (!monthlyMap.has(month)) {
-          monthlyMap.set(month, { month, files: 0, personal_pages: 0, extra_pages: 0 });
-        }
-        const m = monthlyMap.get(month);
-        m.files += (d.files || 0);
-        m.personal_pages += (d.pages || 0);
-      });
-
-      extraPagesData.forEach(d => {
-        const month = d.date.substring(0, 7);
-        if (monthlyMap.has(month)) {
-          monthlyMap.get(month).extra_pages += (d.extra_pages || 0);
-        } else {
-          monthlyMap.set(month, { month, files: 0, personal_pages: 0, extra_pages: d.extra_pages || 0 });
-        }
-      });
-
-      const formattedMonthly = Array.from(monthlyMap.values())
+      // MONTHLY (last 13 months): exact SUM aggregation per month — no full scan.
+      const monthResults = await Promise.all(
+        Array.from({ length: 13 }, (_, i) => i).map(async (i) => {
+          const ref = subMonths(new Date(), i);
+          const mStart = format(startOfMonth(ref), 'yyyy-MM-dd');
+          const mEnd = format(endOfMonth(ref), 'yyyy-MM-dd');
+          const [s, e] = await Promise.all([
+            sumAgg(db.collection('scanning_data').where('site_id', '==', siteId).where('date', '>=', mStart).where('date', '<=', mEnd), ['files', 'pages']),
+            sumAgg(db.collection('daily_extra_pages').where('site_id', '==', siteId).where('date', '>=', mStart).where('date', '<=', mEnd), ['extra_pages']),
+          ]);
+          return { month: format(ref, 'yyyy-MM'), files: s.files, personal_pages: s.pages, extra_pages: e.extra_pages };
+        })
+      );
+      const formattedMonthly = monthResults
+        .filter(m => m.files || m.personal_pages || m.extra_pages)
         .map(m => ({
           month: m.month,
           files: m.files,
@@ -2176,27 +2159,28 @@ async function startServer() {
         }))
         .sort((a, b) => b.month.localeCompare(a.month));
 
-      // Weekly stats
-      const weeklyMap = new Map();
-      scanningData.forEach(d => {
-        if (!weeklyMap.has(d.date)) {
-          weeklyMap.set(d.date, { date: d.date, files: 0, pages: 0 });
-        }
-        const w = weeklyMap.get(d.date);
+      // WEEKLY (last ~35 days): small bounded scan for per-day detail.
+      const weeklyCutoff = format(new Date(Date.now() - 35 * 86400000), 'yyyy-MM-dd');
+      const [weekScanSnap, weekExtraSnap] = await Promise.all([
+        db.collection('scanning_data').where('site_id', '==', siteId).where('date', '>=', weeklyCutoff).get(),
+        db.collection('daily_extra_pages').where('site_id', '==', siteId).where('date', '>=', weeklyCutoff).get(),
+      ]);
+      const weeklyMap = new Map<string, { date: string; files: number; pages: number }>();
+      weekScanSnap.docs.forEach(doc => {
+        const d = doc.data();
+        const w = weeklyMap.get(d.date) || { date: d.date, files: 0, pages: 0 };
         w.files += (d.files || 0);
         w.pages += (d.pages || 0);
+        weeklyMap.set(d.date, w);
       });
-
       if (mode === 'main') {
-        extraPagesData.forEach(d => {
-          if (weeklyMap.has(d.date)) {
-            weeklyMap.get(d.date).pages += (d.extra_pages || 0);
-          } else {
-            weeklyMap.set(d.date, { date: d.date, files: 0, pages: d.extra_pages || 0 });
-          }
+        weekExtraSnap.docs.forEach(doc => {
+          const d = doc.data();
+          const w = weeklyMap.get(d.date) || { date: d.date, files: 0, pages: 0 };
+          w.pages += (d.extra_pages || 0);
+          weeklyMap.set(d.date, w);
         });
       }
-
       const weekly = Array.from(weeklyMap.values())
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, 30);
