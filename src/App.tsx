@@ -53,6 +53,15 @@ import { Site, Employee, ScanningData, Stats, MouzaEntry } from './types';
 import { LoginPage } from './components/LoginPage';
 import { GoogleSheetsImporter } from './components/GoogleSheetsImporter';
 
+// --- Client-side GET cache -------------------------------------------------
+// Browsing the app re-requests the same summary/stats endpoints constantly.
+// This small in-memory cache lets navigation reuse a recent response instead
+// of hitting the server (and Firestore) every time. It is cleared whenever the
+// app makes any write (POST/PUT/PATCH/DELETE), so data stays fresh after saves.
+const _clientGetCache = new Map<string, { expiry: number; data: any }>();
+function clearClientCache() { _clientGetCache.clear(); }
+// ---------------------------------------------------------------------------
+
 // --- Components ---
 
 const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => (
@@ -234,12 +243,27 @@ export default function App() {
         signal: controller.signal
       });
       clearTimeout(timeoutId);
+      const method = (options.method || 'GET').toUpperCase();
+      if (method !== 'GET' && response.ok) clearClientCache();
       return response;
     } catch (err) {
       clearTimeout(timeoutId);
       throw err;
     }
   }, []);
+
+  // GET with a short-lived client cache. Repeated navigation reuses the cached
+  // response instead of re-hitting the server until it expires or a write clears it.
+  const cachedGet = useCallback(async (url: string, ttlMs = 90000): Promise<{ ok: boolean; status: number; data: any }> => {
+    const now = Date.now();
+    const hit = _clientGetCache.get(url);
+    if (hit && hit.expiry > now) return { ok: true, status: 200, data: hit.data };
+    const res = await apiFetch(url);
+    if (!res.ok) return { ok: false, status: res.status, data: null };
+    const data = await res.json();
+    _clientGetCache.set(url, { expiry: now + ttlMs, data });
+    return { ok: true, status: 200, data };
+  }, [apiFetch]);
 
   const checkAuth = useCallback(async (retryCount = 0) => {
     const token = localStorage.getItem('authToken');
@@ -670,10 +694,8 @@ export default function App() {
 
   const fetchSitesSummary = async () => {
     try {
-      const res = await apiFetch('/api/sites-summary');
-      if (!res.ok) return;
-      const data = await res.json();
-      setSitesSummary(data);
+      const { ok, data } = await cachedGet('/api/sites-summary');
+      if (ok) setSitesSummary(data);
     } catch (err) {
       console.error(err);
     }
@@ -694,10 +716,8 @@ export default function App() {
           url += (url.includes('?') ? '&' : '?') + `endDate=${operatorsEndDate}`;
         }
       }
-      const res = await apiFetch(url);
-      if (!res.ok) return;
-      const data = await res.json();
-      setOperatorsSummary(data);
+      const { ok, data } = await cachedGet(url);
+      if (ok) setOperatorsSummary(data);
     } catch (err) {
       console.error(err);
     }
@@ -730,12 +750,11 @@ export default function App() {
   const fetchStats = async (mode: 'main' | 'personal' = 'main') => {
     if (!selectedSiteId) return;
     try {
-      const res = await apiFetch(`/api/stats/${selectedSiteId}?mode=${mode}`);
-      if (!res.ok) {
-        if (res.status === 401) setIsAuthenticated(false);
+      const { ok, status, data } = await cachedGet(`/api/stats/${selectedSiteId}?mode=${mode}`);
+      if (!ok) {
+        if (status === 401) setIsAuthenticated(false);
         return;
       }
-      const data = await res.json();
       setStats(data);
     } catch (err) {
       console.error(err);
@@ -804,7 +823,7 @@ export default function App() {
       
       if (res.ok) {
         setSaveMessage({ type: 'success', text: 'Data saved successfully!' });
-        fetchStats(view === 'admin-data-entry' ? 'personal' : 'main');
+        fetchStats(currentMode);
         setTimeout(() => setSaveMessage(null), 3000);
         return true;
       } else {

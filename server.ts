@@ -11,13 +11,21 @@ import { Resend } from "resend";
 
 // Simple in-memory cache (60 second TTL)
 const cache = new Map<string, { data: any; expires: number }>();
+
+// Auth cache: token -> resolved user. Avoids reading the token doc AND the user
+// doc from Firestore on every single API request (a major, steady read drain).
+// Short TTL so permission/role changes still take effect quickly.
+const authCache = new Map<string, { expiry: number; user: any }>();
+const AUTH_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+function invalidateAuthToken(token: string) { authCache.delete(token); }
+
 function getCache(key: string) {
   const entry = cache.get(key);
   if (!entry) return null;
   if (Date.now() > entry.expires) { cache.delete(key); return null; }
   return entry.data;
 }
-function setCache(key: string, data: any, ttlMs = 60000) {
+function setCache(key: string, data: any, ttlMs = 180000) {
   cache.set(key, { data, expires: Date.now() + ttlMs });
 }
 function clearCache(pattern: string) {
@@ -56,7 +64,8 @@ async function sumAgg(query: any, fields: string[]): Promise<Record<string, numb
     const out: Record<string, number> = {};
     for (const f of fields) out[f] = Number(data[f] || 0);
     return out;
-  } catch (e) {
+  } catch (e: any) {
+    console.warn('[sumAgg] aggregation failed, falling back to full scan (expensive):', e?.message || e);
     const snap = await query.get();
     const out: Record<string, number> = {};
     for (const f of fields) out[f] = 0;
@@ -510,6 +519,27 @@ async function initServerDatabase() {
 }
 
 initServerDatabase().catch(console.error);
+
+// One-time startup check: does Firestore SUM aggregation work in this project?
+// If it doesn't, the dashboard endpoints fall back to full scans (expensive reads),
+// so this makes the situation visible in the Render logs immediately.
+(async () => {
+  try {
+    await db.collection('scanning_data')
+      .where('site_id', '==', '__aggregation_probe__')
+      .aggregate({ files: AggregateField.sum('files') })
+      .get();
+    console.log('=================================================================');
+    console.log('[STARTUP] Firestore SUM aggregation: WORKING — dashboards are cheap.');
+    console.log('=================================================================');
+  } catch (e: any) {
+    console.warn('=================================================================');
+    console.warn('[STARTUP] Firestore SUM aggregation NOT AVAILABLE.');
+    console.warn('[STARTUP] Dashboards will fall back to full scans and burn reads.');
+    console.warn('[STARTUP] Reason:', e?.message || e);
+    console.warn('=================================================================');
+  }
+})();
 
 // Clean up expired tokens — runs every 6 hours
 async function cleanupExpiredTokens() {
@@ -1035,6 +1065,12 @@ async function startServer() {
     const token = req.headers['x-auth-token'] || req.query.token;
     
     if (token && typeof token === 'string' && token.length > 0) {
+      // Fast path: recently-verified token, no Firestore reads.
+      const cachedAuth = authCache.get(token);
+      if (cachedAuth && cachedAuth.expiry > Date.now()) {
+        req.user = cachedAuth.user;
+        return next();
+      }
       try {
         const tokenSnapshot = await db.collection('user_tokens').doc(token).get();
         
@@ -1047,6 +1083,7 @@ async function startServer() {
           // Check token expiry
           if (expiresAt && expiresAt.getTime() < Date.now()) {
             console.log(`[AUTH] Token expired, deleting...`);
+            invalidateAuthToken(token);
             await db.collection('user_tokens').doc(token).delete();
           } else {
             const userSnapshot = await db.collection('users').doc(tokenData?.user_id).get();
@@ -1061,7 +1098,7 @@ async function startServer() {
                 permissions: userData?.permissions || [],
                 site_access: userData?.site_access || []
               };
-              console.log(`[AUTH] Authorized via token: ${userData?.username}`);
+              authCache.set(token, { expiry: Date.now() + AUTH_CACHE_TTL, user: req.user });
               return next();
             }
           }
@@ -1258,6 +1295,7 @@ async function startServer() {
   app.post("/api/logout", async (req, res) => {
     const token = req.headers['x-auth-token'] || req.query.token;
     if (token) {
+      invalidateAuthToken(String(token));
       try {
         const tokenSnapshot = await db.collection('user_tokens').where('token', '==', String(token)).get();
         const batch = db.batch();
@@ -1598,7 +1636,7 @@ async function startServer() {
         };
       }).filter(Boolean);
 
-      setCache(cacheKey, summary, 120000);
+      setCache(cacheKey, summary, 180000);
       res.json(summary);
     } catch (err) {
       console.error('[SITES-SUMMARY] Error:', err);
@@ -1694,7 +1732,7 @@ async function startServer() {
         };
       });
 
-      setCache(cacheKey, summary, 120000);
+      setCache(cacheKey, summary, 180000);
       res.json(summary);
     } catch (err) {
       console.error('[OPERATORS-SUMMARY] Error:', err);
@@ -1844,10 +1882,13 @@ async function startServer() {
       }, { merge: true });
 
       await batch.commit();
-      // Clear caches so fresh data loads
-      clearCache(`stats-${siteId}`);
-      clearCache('sites-summary');
-      clearCache('operators-summary');
+      // NOTE: We deliberately do NOT clear the stats / sites-summary / operators
+      // caches here. During bulk data entry this endpoint is called many times in
+      // quick succession, and clearing forced an expensive recompute on every save
+      // (the main cause of hitting the daily read quota). Instead the dashboards
+      // refresh on their own short TTL, so read cost no longer scales with how
+      // much data is entered. Totals may lag by a couple of minutes; reports and
+      // exports always query fresh data, so pay/report accuracy is unaffected.
 
       // Schedule Email report 1 minute after save
       // Cancel previous timer for same site+date to avoid duplicates
@@ -2160,7 +2201,9 @@ async function startServer() {
         .sort((a, b) => b.month.localeCompare(a.month));
 
       // WEEKLY (last ~35 days): small bounded scan for per-day detail.
-      const weeklyCutoff = format(new Date(Date.now() - 35 * 86400000), 'yyyy-MM-dd');
+      // WEEKLY: the chart only shows the last 7 days, so scan ~10 days (small
+      // margin) instead of 35 — this was the single biggest source of reads.
+      const weeklyCutoff = format(new Date(Date.now() - 10 * 86400000), 'yyyy-MM-dd');
       const [weekScanSnap, weekExtraSnap] = await Promise.all([
         db.collection('scanning_data').where('site_id', '==', siteId).where('date', '>=', weeklyCutoff).get(),
         db.collection('daily_extra_pages').where('site_id', '==', siteId).where('date', '>=', weeklyCutoff).get(),
@@ -2183,7 +2226,7 @@ async function startServer() {
       }
       const weekly = Array.from(weeklyMap.values())
         .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 30);
+        .slice(0, 10);
 
       const result = { overall, monthly: formattedMonthly, weekly, mode };
       setCache(cacheKey, result);
