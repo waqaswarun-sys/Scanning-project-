@@ -25,7 +25,7 @@ import {
   ChevronDown,
   Globe,
   Edit,
-  Map,
+  Map as MapIcon,
   Search,
   RotateCcw,
   Sliders,
@@ -124,7 +124,8 @@ export default function App() {
     'admin-data-entry' | 
     'admin-panel' |
     'admin-management' |
-    'apps'
+    'apps' |
+    'user-controls'
   >('main-view');
   const [adminActiveTab, setAdminActiveTab] = useState<'downloads' | 'sites' | 'users' | 'operators' | 'settings' | 'records'>('downloads');
   const [sites, setSites] = useState<Site[]>([]);
@@ -2146,7 +2147,7 @@ export default function App() {
                 <StatCard 
                   title="Total Mouza Scanned" 
                   value={stats?.overall.total_mouza_scanned?.toLocaleString() || '0'} 
-                  icon={Map} 
+                  icon={MapIcon} 
                   colorClass="bg-emerald-500"
                   loading={!stats || stats.mode !== 'main'}
                   href={sites.find(s => s.id === selectedSiteId)?.link || undefined}
@@ -4303,7 +4304,7 @@ export default function App() {
                       </div>
                     ) : (
                       <div className="py-8 text-center text-slate-400 text-sm italic">
-                        {forecast || "Insufficient data for forecast"}
+                        {typeof forecast === 'string' ? forecast : "Insufficient data for forecast"}
                       </div>
                     )}
                   </Card>
